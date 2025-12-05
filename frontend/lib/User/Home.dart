@@ -3,6 +3,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/bus_route_model.dart';
 import '../screens/route_map_screen.dart';
+import '../screens/real_time_bus.dart';
+import '../screens/crowd_prediction_modal.dart';
+import '../screens/ticket_calculator_modal.dart';
 
 void main() {
   runApp(const MyApp());
@@ -443,39 +446,65 @@ class _HomePageState extends State<HomePage> {
 
   // Helper widget to build the menu squares
   Widget _buildMenuSquare(IconData icon, String label) {
-    return Container(
-      width: 140,
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: primaryColor.withOpacity(0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: primaryColor.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
+    return GestureDetector(
+      onTap: () {
+        if (label == "Bus") {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const RealTimeBusScreen(),
             ),
-            child: Icon(icon, color: primaryColor, size: 28),
-          ),
-          const SizedBox(height: 8),
-          Text(label, 
-            style: const TextStyle(
-              fontSize: 12, 
-              color: textPrimary,
-              fontWeight: FontWeight.w600,
-            )),
-        ],
+          );
+        } else if (label == "Predict") {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => const CrowdPredictionModal(),
+          );
+        } else if (label == "Tickets") {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => const TicketCalculatorModal(),
+          );
+        }
+      },
+      child: Container(
+        width: 140,
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: primaryColor.withOpacity(0.3), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: primaryColor.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: primaryColor, size: 28),
+            ),
+            const SizedBox(height: 8),
+            Text(label, 
+              style: const TextStyle(
+                fontSize: 12, 
+                color: textPrimary,
+                fontWeight: FontWeight.w600,
+              )),
+          ],
+        ),
       ),
     );
   }
