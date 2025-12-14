@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'driver_login_screen.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({Key? key}) : super(key: key);
@@ -19,6 +21,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   String? _phoneError;
   bool _acceptedTerms = false;
   bool _isLoading = false;
+  bool _isDriver = false;
 
   @override
   void dispose() {
@@ -28,8 +31,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     super.dispose();
   }
 
+  Future<void> _saveToLocalStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_name', _nameController.text.trim());
+    await prefs.setString('user_email', _emailController.text.trim());
+    await prefs.setString('user_phone', '+94${_phoneController.text.trim()}');
+    await prefs.setBool('is_registered', true);
+    await prefs.setBool('is_driver', false);
+  }
+
   void _validateAndSubmit() async {
-    // Dismiss keyboard
     FocusScope.of(context).unfocus();
     
     setState(() {
@@ -53,18 +64,20 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         _isLoading = true;
       });
 
-      // Simulate API call
+      await _saveToLocalStorage();
       await Future.delayed(const Duration(seconds: 1));
 
       setState(() {
         _isLoading = false;
       });
 
-      // All validations passed - navigate to email verification
-      Navigator.of(context).pushReplacementNamed(
-        '/email-verification',
-        arguments: _emailController.text,
-      );
+      // Navigate to email verification for passengers
+      if (mounted) {
+        Navigator.of(context).pushReplacementNamed(
+          '/email-verification',
+          arguments: _emailController.text,
+        );
+      }
     }
   }
 
@@ -148,7 +161,96 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       ),
                     ),
                     
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 30),
+                    
+                    // Driver/Passenger Toggle
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _isDriver = false;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: !_isDriver ? const Color(0xFFFF6B35) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.person,
+                                      color: !_isDriver ? Colors.white : Colors.grey[600],
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Passenger',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: !_isDriver ? Colors.white : Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                // Navigate directly to driver login
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute(
+                                    builder: (context) => const DriverLoginScreen(),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: _isDriver ? const Color(0xFFFF6B35) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.drive_eta,
+                                      color: _isDriver ? Colors.white : Colors.grey[600],
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Driver',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: _isDriver ? Colors.white : Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 30),
                     
                     // Name field
                     _buildLabel('Full Name'),

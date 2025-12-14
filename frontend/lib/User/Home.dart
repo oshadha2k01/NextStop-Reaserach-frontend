@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bus_route_model.dart';
 import '../screens/route_map_screen.dart';
 import '../screens/real_time_bus.dart';
 import '../screens/crowd_prediction_modal.dart';
 import '../screens/ticket_calculator_modal.dart';
+import '../screens/all_routes_screen.dart';
+import '../screens/feedback_modal.dart';
+import '../screens/live_tracking_screen.dart';
+import '../services/location_service.dart';
+import 'package:location/location.dart';
 
 void main() {
   runApp(const MyApp());
@@ -50,10 +56,28 @@ class _HomePageState extends State<HomePage> {
   bool _isLoadingLocation = true;
   Set<Marker> _markers = {};
 
+  String _userName = 'User';
+  
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _loadUserName();
+    _enableHighAccuracyLocation(); // Add this
+  }
+
+  Future<void> _enableHighAccuracyLocation() async {
+    await LocationService.enableHighAccuracy();
+  }
+
+  Future<void> _loadUserName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final name = prefs.getString('user_name');
+    if (name != null && name.isNotEmpty) {
+      setState(() {
+        _userName = name.split(' ')[0]; // Get first name only
+      });
+    }
   }
 
   @override
@@ -64,73 +88,64 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _getCurrentLocation() async {
+    setState(() => _isLoadingLocation = true);
+    
     try {
-      // Check if location services are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
+      final location = await LocationService.getCurrentLocation();
+      
+      if (location != null) {
         setState(() {
+          _currentPosition = location;
           _isLoadingLocation = false;
+          
+          _markers.add(
+            Marker(
+              markerId: const MarkerId('current_location'),
+              position: _currentPosition!,
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+              infoWindow: const InfoWindow(title: 'Your Location'),
+            ),
+          );
         });
-        _showLocationServiceDialog();
-        return;
-      }
 
-      // Check location permissions
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          setState(() {
-            _isLoadingLocation = false;
-          });
-          _showPermissionDeniedDialog();
-          return;
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        setState(() {
-          _isLoadingLocation = false;
-        });
-        _showPermissionDeniedForeverDialog();
-        return;
-      }
-
-      // Get current position
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      setState(() {
-        _currentPosition = LatLng(position.latitude, position.longitude);
-        _isLoadingLocation = false;
-        
-        // Add marker for current location
-        _markers.add(
-          Marker(
-            markerId: const MarkerId('current_location'),
-            position: _currentPosition!,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-            infoWindow: const InfoWindow(title: 'Your Location'),
+        _mapController?.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: _currentPosition!,
+              zoom: 15,
+            ),
           ),
         );
-      });
 
-      // Move camera to current location
-      _mapController?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: _currentPosition!,
-            zoom: 15,
-          ),
-        ),
-      );
+        // Start listening to location updates
+        LocationService.getLocationStream().listen((newLocation) {
+          if (mounted) {
+            setState(() {
+              _currentPosition = newLocation;
+              _updateLocationMarker(newLocation);
+            });
+          }
+        });
+      } else {
+        setState(() => _isLoadingLocation = false);
+        _showLocationServiceDialog();
+      }
     } catch (e) {
-      print('Error getting location: $e');
-      setState(() {
-        _isLoadingLocation = false;
-      });
+      print('Error: $e');
+      setState(() => _isLoadingLocation = false);
     }
+  }
+
+  void _updateLocationMarker(LatLng newLocation) {
+    _markers.removeWhere((m) => m.markerId.value == 'current_location');
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('current_location'),
+        position: newLocation,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        infoWindow: const InfoWindow(title: 'Your Location'),
+      ),
+    );
   }
 
   void _showLocationServiceDialog() {
@@ -252,17 +267,21 @@ class _HomePageState extends State<HomePage> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      const Text("Hi User", 
-                        style: TextStyle(
+                      Text(
+                        "Hi $_userName", 
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold, 
                           fontSize: 18,
                           color: Colors.white,
-                        )),
-                      Text(_getGreeting(), 
+                        ),
+                      ),
+                      Text(
+                        _getGreeting(), 
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.9),
                           fontSize: 14,
-                        )),
+                        ),
+                      ),
                     ],
                   )
                 ],
@@ -333,6 +352,8 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           _buildMenuSquare(Icons.directions_bus, "Bus"),
                           const SizedBox(width: 15),
+                          _buildMenuSquare(Icons.navigation, "Live"),
+                          const SizedBox(width: 15),
                           _buildMenuSquare(Icons.auto_graph, "Predict"),
                           const SizedBox(width: 15),
                           _buildMenuSquare(Icons.schedule, "Schedule"),
@@ -342,8 +363,6 @@ class _HomePageState extends State<HomePage> {
                           _buildMenuSquare(Icons.map, "Route"),
                           const SizedBox(width: 15),
                           _buildMenuSquare(Icons.feedback_outlined, "Feedback"),
-                          const SizedBox(width: 15),
-                          _buildMenuSquare(Icons.report_problem_outlined, "Driver Complains"),
                         ],
                       ),
                     ),
@@ -455,6 +474,13 @@ class _HomePageState extends State<HomePage> {
               builder: (context) => const RealTimeBusScreen(),
             ),
           );
+        } else if (label == "Live") {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const LiveTrackingScreen(),
+            ),
+          );
         } else if (label == "Predict") {
           showModalBottomSheet(
             context: context,
@@ -468,6 +494,20 @@ class _HomePageState extends State<HomePage> {
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
             builder: (context) => const TicketCalculatorModal(),
+          );
+        } else if (label == "Route") {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const AllRoutesScreen(),
+            ),
+          );
+        } else if (label == "Feedback") {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => const FeedbackModal(),
           );
         }
       },

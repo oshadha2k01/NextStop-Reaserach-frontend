@@ -180,6 +180,74 @@ class _RouteStopsMapScreenState extends State<RouteStopsMapScreen> {
     _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
+  void _createMarkers() {
+    _markers.clear();
+    
+    for (int i = 0; i < widget.allStops.length; i++) {
+      final stop = widget.allStops[i];
+      
+      _markers.add(
+        Marker(
+          markerId: MarkerId('stop_$i'),
+          position: LatLng(stop.latitude, stop.longitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange), // Light orange
+          infoWindow: InfoWindow(
+            title: stop.name,
+            snippet: stop.keyLandmark ?? 'Bus Stop ${i + 1}',
+          ),
+          onTap: () {
+            // Show location name when marker is clicked
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stop.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (stop.keyLandmark != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        stop.keyLandmark!,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ],
+                ),
+                backgroundColor: const Color(0xFFFFB399), // Light orange background
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 3),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                margin: const EdgeInsets.all(16),
+              ),
+            );
+            
+            // Animate camera to clicked location
+            _mapController?.animateCamera(
+              CameraUpdate.newCameraPosition(
+                CameraPosition(
+                  target: LatLng(stop.latitude, stop.longitude),
+                  zoom: 16,
+                  bearing: 0,
+                  tilt: 45,
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+    
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

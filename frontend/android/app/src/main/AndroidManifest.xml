@@ -10,10 +10,10 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
-        <!-- Google Maps API Key -->
+        <!-- Google Maps API Key - Updated -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCNkpTSA5RsbYe5J_bS8c9s4O_II1JKbrU"/>
+            android:value="AIzaSyBmgWCSt6zznmFD1XiuzKMW4gaxO5LANUc"/>
 
         <activity
             android:name=".MainActivity"

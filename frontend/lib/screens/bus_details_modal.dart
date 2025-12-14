@@ -26,6 +26,7 @@ class BusDetailsModal extends StatefulWidget {
 
 class _BusDetailsModalState extends State<BusDetailsModal> {
   static const Color primaryColor = Color(0xFFFF6B35);
+  static const Color lightOrange = Color(0xFFFFB399); // Light orange for markers
   static const Color textPrimary = Color(0xFF1F2937);
   static const Color textSecondary = Color(0xFF6B7280);
   
