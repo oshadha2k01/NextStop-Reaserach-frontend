@@ -759,7 +759,6 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
                       width: _fromHasError ? 2.5 : 2,
                     ),
                     borderRadius: BorderRadius.circular(12),
-                    color: _fromHasError ? Colors.red.shade50 : Colors.white,
                   ),
                   child: TextField(
                     controller: _fromController,
@@ -771,7 +770,7 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
                     decoration: InputDecoration(
                       hintText: 'From (e.g., Kaduwela, Malabe)',
                       hintStyle: TextStyle(
-                        color: _fromHasError ? Colors.red.shade300 : Colors.grey[400],
+                        color: Colors.grey[400],
                         fontSize: 16,
                       ),
                       prefixIcon: Icon(
@@ -820,7 +819,6 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
                       width: _toHasError ? 2.5 : 2,
                     ),
                     borderRadius: BorderRadius.circular(12),
-                    color: _toHasError ? Colors.red.shade50 : Colors.white,
                   ),
                   child: TextField(
                     controller: _toController,
@@ -832,7 +830,7 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
                     decoration: InputDecoration(
                       hintText: 'To (e.g., Kollupitiya, Pettah)',
                       hintStyle: TextStyle(
-                        color: _toHasError ? Colors.red.shade300 : Colors.grey[400],
+                        color: Colors.grey[400],
                         fontSize: 16,
                       ),
                       prefixIcon: Icon(
