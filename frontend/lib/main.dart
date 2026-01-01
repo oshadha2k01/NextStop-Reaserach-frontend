@@ -5,6 +5,7 @@ import 'screens/onboarding2_screen.dart';
 import 'screens/permission_screen.dart';
 import 'screens/registration_screen.dart';
 import 'screens/email_verification_screen.dart';
+import 'User/Home.dart';
 
 void main() {
   runApp(const MyApp());
@@ -35,7 +36,7 @@ class MyApp extends StatelessWidget {
         '/permission': (context) => const PermissionScreen(),
         '/registration': (context) => const RegistrationScreen(),
         '/email-verification': (context) => const EmailVerificationScreen(),
-        '/home': (context) => const MyHomePage(title: 'NextStop'),
+        '/home': (context) => const HomePage(),
       },
     );
   }
