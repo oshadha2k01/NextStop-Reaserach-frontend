@@ -1,13 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Location permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
+    <uses-permission android:name="android.permission.INTERNET"/>
+    
     <application
         android:label="frontend"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
+        <!-- Google Maps API Key -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyCNkpTSA5RsbYe5J_bS8c9s4O_II1JKbrU"/>
