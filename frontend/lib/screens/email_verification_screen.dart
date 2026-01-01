@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 
 class EmailVerificationScreen extends StatefulWidget {
-  const EmailVerificationScreen({Key? key}) : super(key: key);
+  const EmailVerificationScreen({super.key});
 
   @override
   State<EmailVerificationScreen> createState() => _EmailVerificationScreenState();
@@ -141,7 +141,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   String _getCountdownText() {
     int minutes = _resendCountdown ~/ 60;
     int seconds = _resendCountdown % 60;
-    return 'Resend in ${minutes}:${seconds.toString().padLeft(2, '0')}';
+    return 'Resend in $minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   @override
