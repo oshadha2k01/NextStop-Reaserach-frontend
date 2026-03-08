@@ -7,7 +7,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import '../models/bus_route_model.dart';
-import 'bus_details_modal.dart';
 
 class RealTimeBusScreen extends StatefulWidget {
   const RealTimeBusScreen({Key? key}) : super(key: key);
@@ -43,7 +42,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       _selectedRoute = _allRoutes[0];
       _updateMapForRoute();
     }
-    // Start tracking the phone instead of a fake animation!
+    // Start tracking the phone
     _startTrackingDeviceAsBus();
   }
 
@@ -54,7 +53,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     super.dispose();
   }
 
-  // Gets device location and speed, and treats it as the "Bus"
+  // Gets device location and speed
   Future<void> _startTrackingDeviceAsBus() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
@@ -68,7 +67,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     // Get initial position
     Position initialPosition = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
     if (mounted) {
-      _updateDeviceBusMarker(initialPosition);
+      _updateDeviceAndBusMarkers(initialPosition);
       // Center the camera on the user's first location
       _mapController?.animateCamera(CameraUpdate.newLatLngZoom(
         LatLng(initialPosition.latitude, initialPosition.longitude), 15));
@@ -82,12 +81,12 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       ),
     ).listen((Position position) {
       if (mounted) {
-        _updateDeviceBusMarker(position);
+        _updateDeviceAndBusMarkers(position);
       }
     });
   }
 
-  // Your beautiful custom bus drawing!
+  // Your custom bus drawing
   Future<void> _createBusIcon() async {
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
@@ -135,9 +134,8 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     
     _busIcon = BitmapDescriptor.fromBytes(uint8List);
     
-    // If we already have the location, update the marker now that the icon is ready
     if (_currentDevicePosition != null) {
-      _updateDeviceBusMarker(_currentDevicePosition!);
+      _updateDeviceAndBusMarkers(_currentDevicePosition!);
     } else {
       setState(() {});
     }
@@ -149,7 +147,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     _markers.clear();
     _polylines.clear();
 
-    // Add stop markers with better visibility
+    // Add stop markers
     for (int i = 0; i < _selectedRoute!.stops.length; i++) {
       final stop = _selectedRoute!.stops[i];
       _markers.add(
@@ -170,7 +168,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       );
     }
 
-    // Add route polyline with better visibility
+    // Add route polyline
     final routePoints = _selectedRoute!.stops
         .map((stop) => LatLng(stop.latitude, stop.longitude))
         .toList();
@@ -185,24 +183,36 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       ),
     );
 
-    // Re-add the bus marker if we have the location
     if (_currentDevicePosition != null) {
-      _updateDeviceBusMarker(_currentDevicePosition!);
+      _updateDeviceAndBusMarkers(_currentDevicePosition!);
     }
 
-    // Move camera to show entire route
     if (_mapController != null && _selectedRoute!.stops.isNotEmpty) {
       _fitMapToRoute();
     }
   }
 
-  void _updateDeviceBusMarker(Position position) {
+  void _updateDeviceAndBusMarkers(Position position) {
     _currentDevicePosition = position;
     
     setState(() {
-      // Remove the old bus position
-      _markers.removeWhere((marker) => marker.markerId.value == 'device_live_bus');
+      // Remove old markers
+      _markers.removeWhere((marker) => 
+        marker.markerId.value == 'device_live_bus' || 
+        marker.markerId.value == 'user_location_pin');
 
+      // 1. ADD THE USER LOCATION PIN
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('user_location_pin'),
+          position: LatLng(position.latitude, position.longitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          infoWindow: const InfoWindow(title: 'Your Location'),
+          zIndex: 1, // Keep it under the bus icon
+        ),
+      );
+
+      // 2. ADD THE CUSTOM BUS ICON
       if (_busIcon != null) {
         _markers.add(
           Marker(
@@ -210,9 +220,9 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
             position: LatLng(position.latitude, position.longitude),
             icon: _busIcon!,
             anchor: const Offset(0.5, 0.5),
-            zIndex: 10,
+            zIndex: 10, // Keep it on top of the user pin
             onTap: () {
-              // OPEN THE SPECIFIC POPUP UI YOU REQUESTED
+              // Open modal when the bus is tapped
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
@@ -275,7 +285,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       ),
       body: Column(
         children: [
-          // Route Selector with updated styling
+          // Route Selector
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -366,7 +376,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
             ),
           ),
 
-          // Map with enhanced readability
+          // Map
           Expanded(
             child: Container(
               margin: const EdgeInsets.all(16),
@@ -391,6 +401,8 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
                   ),
                   markers: _markers,
                   polylines: _polylines,
+                  // NATIVE LOCATION DOT IS NOW ENABLED HERE:
+                  myLocationEnabled: true,
                   myLocationButtonEnabled: true,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
@@ -408,7 +420,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
             ),
           ),
 
-          // Legend with updated styling
+          // Legend
           Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -465,8 +477,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
 }
 
 // ======================================================================
-// NEW: LIVE DEVICE-AS-BUS DETAILS MODAL (API-DRIVEN, NO TEXT BOX)
-// Matches your 3rd and 4th picture design perfectly!
+// LIVE DEVICE-AS-BUS DETAILS MODAL (API-DRIVEN, NO TEXT BOX)
 // ======================================================================
 class DeviceBusLiveDetailsModal extends StatefulWidget {
   final double latitude;
@@ -491,7 +502,7 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
   Map<String, dynamic>? _etaResult;
   String _errorMessage = '';
 
-  // Geolocator gives speed in m/s, convert to km/h for the UI
+  // Convert m/s to km/h
   double get speedKmh => widget.speedInMps * 3.6;
 
   Future<void> _fetchEtaFromBackend() async {
@@ -696,7 +707,7 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             const Text("Calculate Arrival Time", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 15),
 
-            // DYNAMIC API DATA: Show Loading, Error, Prediction, OR the action Button
+            // Show ETA or Button
             if (_isLoadingEta)
               const Center(child: CircularProgressIndicator(color: primaryColor))
             else if (_etaResult != null)
@@ -731,7 +742,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
                 ),
-              // NO TEXT FIELD HERE! Just the button.
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -756,12 +766,12 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             
             const SizedBox(height: 15),
             
-            // View All Bus Stops Button (From your 4th picture)
+            // View All Bus Stops
             SizedBox(
               width: double.infinity,
               height: 50,
               child: OutlinedButton(
-                onPressed: () {}, // Add logic here later if needed
+                onPressed: () {},
                 style: OutlinedButton.styleFrom(
                   foregroundColor: primaryColor, side: const BorderSide(color: primaryColor),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -779,12 +789,12 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             
             const SizedBox(height: 15),
 
-            // Predict Time to Destination Button (From your 4th picture)
+            // Predict Time to Destination
             SizedBox(
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: () {}, // Add logic here later if needed
+                onPressed: () {},
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
