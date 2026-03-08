@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
+import '../models/bus_stop.dart';
 import '../models/bus_route_model.dart';
 import '../services/prediction_service.dart';
 
@@ -16,100 +17,92 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
   static const Color textPrimary = Color(0xFF1F2937);
   static const Color textSecondary = Color(0xFF6B7280);
 
-  final TextEditingController _fromController = TextEditingController();
-  final TextEditingController _toController = TextEditingController();
   final TextEditingController _timeController = TextEditingController();
 
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
-  
+
+  late final List<BusStop> _allStops;
+  BusStop? _selectedFromStop;
+  BusStop? _selectedToStop;
+
   DateTime? _selectedDate;
-  BusRouteModel? _matchedRoute;
   bool _isPredicting = false;
   bool _showPrediction = false;
   Map<String, dynamic>? _predictionResult;
 
   @override
+  void initState() {
+    super.initState();
+    final routes = BusRouteModel.getAllRoutes();
+    _allStops = routes.first.stops;
+  }
+
+  @override
   void dispose() {
-    _fromController.dispose();
-    _toController.dispose();
     _timeController.dispose();
     _mapController?.dispose();
     super.dispose();
   }
 
-  void _searchRoute() {
-    final from = _fromController.text.trim();
-    final to = _toController.text.trim();
-
-    if (from.isEmpty || to.isEmpty) return;
-
-    final routes = BusRouteModel.searchRoutes(from, to);
-    
-    if (routes.isNotEmpty) {
-      setState(() {
-        _matchedRoute = routes.first;
-      });
-      _updateMap();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No route found for these locations'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+  void _onStopSelected() {
+    if (_selectedFromStop == null || _selectedToStop == null) return;
+    _updateMap();
   }
 
   void _updateMap() {
-    if (_matchedRoute == null) return;
+    if (_selectedFromStop == null || _selectedToStop == null) return;
 
     _markers.clear();
     _polylines.clear();
 
     // Add from location marker
-    if (_matchedRoute!.stops.isNotEmpty) {
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('from'),
-          position: LatLng(
-            _matchedRoute!.stops.first.latitude,
-            _matchedRoute!.stops.first.longitude,
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          infoWindow: InfoWindow(title: 'From: ${_matchedRoute!.stops.first.name}'),
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('from'),
+        position: LatLng(
+          _selectedFromStop!.latitude,
+          _selectedFromStop!.longitude,
         ),
-      );
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        infoWindow: InfoWindow(title: 'From: ${_selectedFromStop!.name}'),
+      ),
+    );
 
-      // Add to location marker
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('to'),
-          position: LatLng(
-            _matchedRoute!.stops.last.latitude,
-            _matchedRoute!.stops.last.longitude,
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(title: 'To: ${_matchedRoute!.stops.last.name}'),
+    // Add to location marker
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('to'),
+        position: LatLng(
+          _selectedToStop!.latitude,
+          _selectedToStop!.longitude,
         ),
-      );
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: InfoWindow(title: 'To: ${_selectedToStop!.name}'),
+      ),
+    );
 
-      // Add route polyline
-      final routePoints = _matchedRoute!.stops
-          .map((stop) => LatLng(stop.latitude, stop.longitude))
-          .toList();
+    // Build polyline between selected stops
+    final fromIndex = _allStops.indexOf(_selectedFromStop!);
+    final toIndex = _allStops.indexOf(_selectedToStop!);
+    final startIdx = fromIndex < toIndex ? fromIndex : toIndex;
+    final endIdx = fromIndex < toIndex ? toIndex : fromIndex;
+    final routeStops = _allStops.sublist(startIdx, endIdx + 1);
 
-      _polylines.add(
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: routePoints,
-          color: primaryColor,
-          width: 6,
-          patterns: [PatternItem.dash(30), PatternItem.gap(15)],
-        ),
-      );
-    }
+    final routePoints = routeStops
+        .map((stop) => LatLng(stop.latitude, stop.longitude))
+        .toList();
+
+    _polylines.add(
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: routePoints,
+        color: primaryColor,
+        width: 6,
+        patterns: [PatternItem.dash(30), PatternItem.gap(15)],
+      ),
+    );
 
     setState(() {});
 
@@ -119,14 +112,15 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
   }
 
   void _fitMapToRoute() {
-    if (_matchedRoute == null || _matchedRoute!.stops.isEmpty) return;
+    if (_selectedFromStop == null || _selectedToStop == null) return;
 
-    double minLat = _matchedRoute!.stops.first.latitude;
-    double maxLat = _matchedRoute!.stops.first.latitude;
-    double minLng = _matchedRoute!.stops.first.longitude;
-    double maxLng = _matchedRoute!.stops.first.longitude;
+    final stops = [_selectedFromStop!, _selectedToStop!];
+    double minLat = stops.first.latitude;
+    double maxLat = stops.first.latitude;
+    double minLng = stops.first.longitude;
+    double maxLng = stops.first.longitude;
 
-    for (var stop in _matchedRoute!.stops) {
+    for (var stop in stops) {
       if (stop.latitude < minLat) minLat = stop.latitude;
       if (stop.latitude > maxLat) maxLat = stop.latitude;
       if (stop.longitude < minLng) minLng = stop.longitude;
@@ -187,17 +181,29 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
     );
 
     if (picked != null) {
+      final hour = picked.hour.toString().padLeft(2, '0');
+      final minute = picked.minute.toString().padLeft(2, '0');
       setState(() {
-        _timeController.text = picked.format(context);
+        _timeController.text = '$hour:$minute:00';
       });
     }
   }
 
   Future<void> _predictCrowd() async {
-    if (_matchedRoute == null) {
+    if (_selectedFromStop == null || _selectedToStop == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a valid route first'),
+          content: Text('Please select from and to locations'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedFromStop!.name == _selectedToStop!.name) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('From and To locations cannot be the same'),
           backgroundColor: Colors.red,
         ),
       );
@@ -221,11 +227,10 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
 
     final predictionService = PredictionService();
     final response = await predictionService.predictCrowd(
-      routeName: _matchedRoute!.routeName,
+      fromStop: _selectedFromStop!.name,
+      toStop: _selectedToStop!.name,
       date: _selectedDate!.toIso8601String().split('T')[0],
       time: _timeController.text,
-      fromStop: _fromController.text.trim(),
-      toStop: _toController.text.trim(),
     );
 
     setState(() {
@@ -234,12 +239,13 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
 
     if (response.success && response.data != null) {
       final data = response.data!;
+      final prediction = data['prediction'] ?? {};
 
       Color statusColor;
-      final status = (data['status'] ?? data['crowd_level'] ?? 'moderate').toString().toLowerCase();
-      if (status.contains('over') || status.contains('high') || status.contains('crowded')) {
+      final crowdLevel = (prediction['crowd_level'] ?? 'moderate').toString().toLowerCase();
+      if (crowdLevel.contains('over') || crowdLevel.contains('high') || crowdLevel.contains('crowded')) {
         statusColor = Colors.red;
-      } else if (status.contains('moderate') || status.contains('medium')) {
+      } else if (crowdLevel.contains('moderate') || crowdLevel.contains('medium')) {
         statusColor = Colors.orange;
       } else {
         statusColor = Colors.green;
@@ -248,13 +254,13 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
       setState(() {
         _showPrediction = true;
         _predictionResult = {
-          'crowd_level': data['crowd_level'] ?? status,
-          'date': data['date'] ?? _selectedDate!.toIso8601String().split('T')[0],
-          'day_of_week': data['day_of_week'] ?? _getDayOfWeek(_selectedDate!.weekday),
-          'predicted_crowd': data['predicted_crowd'] ?? 50,
-          'recommendation': data['recommendation'] ?? 'No recommendation available.',
-          'status': data['status'] ?? 'Moderate',
-          'time': data['time'] ?? _timeController.text,
+          'crowd_level': prediction['crowd_level'] ?? crowdLevel,
+          'date': prediction['date'] ?? _selectedDate!.toIso8601String().split('T')[0],
+          'day_of_week': prediction['day_of_week'] ?? _getDayOfWeek(_selectedDate!.weekday),
+          'predicted_crowd': prediction['predicted_crowd'] ?? 50,
+          'recommendation': prediction['recommendation'] ?? 'No recommendation available.',
+          'status': prediction['status'] ?? 'Moderate',
+          'time': prediction['time'] ?? _timeController.text,
           'statusColor': statusColor,
         };
       });
@@ -348,7 +354,7 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
 
                   const SizedBox(height: 24),
 
-                  // From Location
+                  // From Location Dropdown
                   const Text(
                     'From Location',
                     style: TextStyle(
@@ -363,25 +369,54 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
                       border: Border.all(color: primaryColor.withOpacity(0.3), width: 1.5),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: TextField(
-                      controller: _fromController,
-                      onChanged: (value) => _searchRoute(),
-                      decoration: InputDecoration(
-                        hintText: 'e.g., Kaduwela, Malabe',
-                        hintStyle: TextStyle(color: Colors.grey[400]),
-                        prefixIcon: const Icon(Icons.location_on, color: primaryColor),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 16,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<BusStop>(
+                        isExpanded: true,
+                        value: _selectedFromStop,
+                        hint: Row(
+                          children: [
+                            const Icon(Icons.location_on, color: primaryColor),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Select from stop',
+                              style: TextStyle(color: Colors.grey[400]),
+                            ),
+                          ],
                         ),
+                        items: _allStops
+                            .where((stop) => stop.name != _selectedToStop?.name)
+                            .map((stop) => DropdownMenuItem<BusStop>(
+                                  value: stop,
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.location_on, color: primaryColor, size: 20),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          stop.name,
+                                          style: const TextStyle(fontSize: 14),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedFromStop = value;
+                            _showPrediction = false;
+                          });
+                          _onStopSelected();
+                        },
                       ),
                     ),
                   ),
 
                   const SizedBox(height: 20),
 
-                  // To Location
+                  // To Location Dropdown
                   const Text(
                     'To Location',
                     style: TextStyle(
@@ -396,18 +431,47 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
                       border: Border.all(color: primaryColor.withOpacity(0.3), width: 1.5),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: TextField(
-                      controller: _toController,
-                      onChanged: (value) => _searchRoute(),
-                      decoration: InputDecoration(
-                        hintText: 'e.g., Kollupitiya, Pettah',
-                        hintStyle: TextStyle(color: Colors.grey[400]),
-                        prefixIcon: const Icon(Icons.flag, color: primaryColor),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 16,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<BusStop>(
+                        isExpanded: true,
+                        value: _selectedToStop,
+                        hint: Row(
+                          children: [
+                            const Icon(Icons.flag, color: primaryColor),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Select to stop',
+                              style: TextStyle(color: Colors.grey[400]),
+                            ),
+                          ],
                         ),
+                        items: _allStops
+                            .where((stop) => stop.name != _selectedFromStop?.name)
+                            .map((stop) => DropdownMenuItem<BusStop>(
+                                  value: stop,
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.flag, color: primaryColor, size: 20),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          stop.name,
+                                          style: const TextStyle(fontSize: 14),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedToStop = value;
+                            _showPrediction = false;
+                          });
+                          _onStopSelected();
+                        },
                       ),
                     ),
                   ),
@@ -415,7 +479,7 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
                   const SizedBox(height: 20),
 
                   // Route Info
-                  if (_matchedRoute != null) ...[
+                  if (_selectedFromStop != null && _selectedToStop != null) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -423,14 +487,14 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: primaryColor.withOpacity(0.3)),
                       ),
-                      child: Row(
+                      child: const Row(
                         children: [
-                          const Icon(Icons.route, color: primaryColor, size: 20),
-                          const SizedBox(width: 8),
+                          Icon(Icons.route, color: primaryColor, size: 20),
+                          SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              _matchedRoute!.routeName,
-                              style: const TextStyle(
+                              'Route 177: Kaduwela - Kollupitiya',
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: textPrimary,
@@ -444,7 +508,7 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
                   ],
 
                   // Map Display
-                  if (_matchedRoute != null) ...[
+                  if (_selectedFromStop != null && _selectedToStop != null) ...[
                     const Text(
                       'Route Preview',
                       style: TextStyle(
@@ -472,8 +536,8 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
                         child: GoogleMap(
                           initialCameraPosition: CameraPosition(
                             target: LatLng(
-                              _matchedRoute!.stops.first.latitude,
-                              _matchedRoute!.stops.first.longitude,
+                              _selectedFromStop!.latitude,
+                              _selectedFromStop!.longitude,
                             ),
                             zoom: 12,
                           ),
