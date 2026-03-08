@@ -1,20 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Location Permissions -->
+    <!-- Location permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- Internet Permission required for Sockets -->
-    <uses-permission android:name="android.permission.INTERNET" />
-
+    <uses-permission android:name="android.permission.INTERNET"/>
+    
     <application
         android:label="frontend"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"> <!-- CRITICAL FOR LOCAL HTTP SERVERS -->
 
+        <!-- Google Maps API Key - Updated -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCNkpTSA5RsbYe5J_bS8c9s4O_II1JKbrU"/>
+            android:value="AIzaSyBmgWCSt6zznmFD1XiuzKMW4gaxO5LANUc"/>
 
         <activity
             android:name=".MainActivity"

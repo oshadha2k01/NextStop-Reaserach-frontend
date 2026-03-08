@@ -14,7 +14,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<OnboardingPage> _pages = [
     OnboardingPage(
       image: 'assets/location.png',
-      title: 'Welcome to NEXT STOP',
+      title: 'Welcome to NextStop',
       description: 'From your stop to your destination—smarter.',
     ),
   ];

@@ -36,6 +36,15 @@ dependencies:
   cupertino_icons: ^1.0.8
   google_maps_flutter: ^2.14.0
   socket_io_client: ^3.1.4
+  # Current dependencies
+  google_maps_flutter: ^2.5.0
+  geolocator: ^14.0.2
+  shared_preferences: ^2.2.2
+
+  # Add ONLY these for better location accuracy (no API keys required)
+  location: ^5.0.3
+  geocoding: ^2.1.1
+  permission_handler: ^11.0.1
 
 dev_dependencies:
   flutter_test:
