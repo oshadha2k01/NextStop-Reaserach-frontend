@@ -1,12 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Location Permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Internet Permission required for Sockets -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="frontend"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"> <!-- CRITICAL FOR LOCAL HTTP SERVERS -->
 
         <meta-data
             android:name="com.google.android.geo.API_KEY"
