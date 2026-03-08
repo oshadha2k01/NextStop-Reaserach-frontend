@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/bus_route_model.dart';
+import '../models/bus_stop.dart'; // Add this import
 
 class RouteMapScreen extends StatefulWidget {
   final BusRouteModel route;
@@ -33,16 +34,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           markerId: MarkerId('stop_$i'),
           position: stop.location,
           icon: BitmapDescriptor.defaultMarkerWithHue(
-            i == 0 
-                ? BitmapDescriptor.hueGreen 
-                : i == widget.route.stops.length - 1
-                    ? BitmapDescriptor.hueRed
-                    : BitmapDescriptor.hueOrange,
+            30, // Light orange (30 degrees on hue wheel)
           ),
           infoWindow: InfoWindow(
-            title: stop.name,
-            snippet: stop.keyLandmark,
+            title: '${i + 1}. ${stop.name}',
+            snippet: stop.keyLandmark ?? 'Bus Stop',
           ),
+          onTap: () {
+            // Show stop details when marker is clicked
+            _showStopDetails(stop, i + 1);
+          },
         ),
       );
     }
@@ -60,6 +61,94 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     );
 
     setState(() {});
+  }
+
+  void _showStopDetails(BusStop stop, int stopNumber) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$stopNumber',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      stop.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (stop.keyLandmark != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.place, color: Colors.white70, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        stop.keyLandmark!,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        backgroundColor: const Color(0xFFFF6B35),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: const EdgeInsets.all(16),
+        action: SnackBarAction(
+          label: 'Navigate',
+          textColor: Colors.white,
+          onPressed: () {
+            // Animate to stop location
+            _mapController?.animateCamera(
+              CameraUpdate.newCameraPosition(
+                CameraPosition(
+                  target: LatLng(stop.latitude, stop.longitude),
+                  zoom: 17,
+                  bearing: 0,
+                  tilt: 45,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   LatLngBounds _getBounds() {
