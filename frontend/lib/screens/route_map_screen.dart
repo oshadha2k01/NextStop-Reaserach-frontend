@@ -6,7 +6,7 @@ import '../models/bus_stop.dart'; // Add this import
 class RouteMapScreen extends StatefulWidget {
   final BusRouteModel route;
 
-  const RouteMapScreen({Key? key, required this.route}) : super(key: key);
+  const RouteMapScreen({super.key, required this.route});
 
   @override
   State<RouteMapScreen> createState() => _RouteMapScreenState();
@@ -14,8 +14,8 @@ class RouteMapScreen extends StatefulWidget {
 
 class _RouteMapScreenState extends State<RouteMapScreen> {
   GoogleMapController? _mapController;
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   
   static const Color primaryColor = Color(0xFFFF6B35);
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class PermissionScreen extends StatefulWidget {
-  const PermissionScreen({Key? key}) : super(key: key);
+  const PermissionScreen({super.key});
 
   @override
   State<PermissionScreen> createState() => _PermissionScreenState();

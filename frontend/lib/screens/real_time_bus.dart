@@ -4,10 +4,11 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import '../models/bus_route_model.dart';
+import '../services/socket_service.dart';
 import 'bus_details_modal.dart';
 
 class RealTimeBusScreen extends StatefulWidget {
-  const RealTimeBusScreen({Key? key}) : super(key: key);
+  const RealTimeBusScreen({super.key});
 
   @override
   State<RealTimeBusScreen> createState() => _RealTimeBusScreenState();
@@ -23,11 +24,11 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
   GoogleMapController? _mapController;
   BusRouteModel? _selectedRoute;
   List<BusRouteModel> _allRoutes = [];
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   
   // Hardcoded IoT bus data - 2 buses per route
-  Map<String, List<BusData>> _busData = {};
+  final Map<String, List<BusData>> _busData = {};
   Timer? _animationTimer;
   BitmapDescriptor? _busIcon;
 
@@ -41,14 +42,40 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       _initializeBusData();
       _updateMapForRoute();
       _startBusAnimation();
+      _connectBusSocket();
     }
   }
 
   @override
   void dispose() {
     _animationTimer?.cancel();
+    SocketService().off('bus-location-update');
     _mapController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _connectBusSocket() async {
+    final socketService = SocketService();
+    await socketService.connect();
+
+    socketService.on('bus-location-update', (data) {
+      if (data == null || !mounted || _selectedRoute == null) return;
+
+      final busId = data['busNumber'] ?? data['busId'] ?? '';
+      final lat = (data['latitude'] ?? 0).toDouble();
+      final lng = (data['longitude'] ?? 0).toDouble();
+
+      final buses = _busData[_selectedRoute!.routeName];
+      if (buses != null) {
+        final busIndex = buses.indexWhere((b) => b.busId == busId);
+        if (busIndex >= 0) {
+          setState(() {
+            buses[busIndex].position = LatLng(lat, lng);
+            _updateBusMarkers();
+          });
+        }
+      }
+    });
   }
 
   Future<void> _createBusIcon() async {
@@ -264,6 +291,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
         busId: bus.busId,
         currentLocation: currentStop.name,
         remainingStops: remainingStops,
+        allRouteStops: _selectedRoute!.stops,
         currentStopIndex: bus.currentStopIndex,
       ),
     );

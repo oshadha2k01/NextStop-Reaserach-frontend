@@ -3,9 +3,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
 import 'dart:math';
 import '../models/bus_route_model.dart';
+import '../services/prediction_service.dart';
 
 class TicketCalculatorModal extends StatefulWidget {
-  const TicketCalculatorModal({Key? key}) : super(key: key);
+  const TicketCalculatorModal({super.key});
 
   @override
   State<TicketCalculatorModal> createState() => _TicketCalculatorModalState();
@@ -20,8 +21,8 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
   final TextEditingController _toController = TextEditingController();
 
   GoogleMapController? _mapController;
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   
   BusRouteModel? _matchedRoute;
   bool _isCalculating = false;
@@ -172,37 +173,54 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
       _showResult = false;
     });
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
-
-    // Calculate distance
-    final distance = _calculateDistance();
-
-    // Fare calculation: Rs. 30 base (2km) + Rs. 10 per additional km
-    double fare;
-    if (distance <= 2) {
-      fare = 30;
-    } else {
-      fare = 30 + ((distance - 2) * 10);
-    }
-
-    // Alternative transport methods
-    final trainFare = fare * 0.7; // 30% cheaper
-    final taxiFare = fare * 5; // 5x more expensive
+    final predictionService = PredictionService();
+    final response = await predictionService.calculateFare(
+      from: _matchedRoute!.stops.first.name,
+      to: _matchedRoute!.stops.last.name,
+      routeName: _matchedRoute!.routeName,
+    );
 
     setState(() {
       _isCalculating = false;
-      _showResult = true;
-      _ticketResult = {
-        'distance': distance,
-        'busFare': fare,
-        'trainFare': trainFare,
-        'taxiFare': taxiFare,
-        'from': _matchedRoute!.stops.first.name,
-        'to': _matchedRoute!.stops.last.name,
-        'route': _matchedRoute!.routeName,
-      };
     });
+
+    if (response.success && response.data != null) {
+      final data = response.data!;
+      setState(() {
+        _showResult = true;
+        _ticketResult = {
+          'distance': (data['distance'] ?? _calculateDistance()).toDouble(),
+          'busFare': (data['busFare'] ?? data['fare'] ?? 0).toDouble(),
+          'trainFare': (data['trainFare'] ?? ((data['busFare'] ?? data['fare'] ?? 0) * 0.7)).toDouble(),
+          'taxiFare': (data['taxiFare'] ?? ((data['busFare'] ?? data['fare'] ?? 0) * 5)).toDouble(),
+          'from': _matchedRoute!.stops.first.name,
+          'to': _matchedRoute!.stops.last.name,
+          'route': _matchedRoute!.routeName,
+        };
+      });
+    } else {
+      // Fallback to local calculation if API fails
+      final distance = _calculateDistance();
+      double fare;
+      if (distance <= 2) {
+        fare = 30;
+      } else {
+        fare = 30 + ((distance - 2) * 10);
+      }
+
+      setState(() {
+        _showResult = true;
+        _ticketResult = {
+          'distance': distance,
+          'busFare': fare,
+          'trainFare': fare * 0.7,
+          'taxiFare': fare * 5,
+          'from': _matchedRoute!.stops.first.name,
+          'to': _matchedRoute!.stops.last.name,
+          'route': _matchedRoute!.routeName,
+        };
+      });
+    }
   }
 
   @override
