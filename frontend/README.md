@@ -91,7 +91,9 @@ Developed as part of IT4010 Research Project – 2025 (July Intake).
 
 ---
 
-## 🚀 Setup
+* Real-time passenger counting using cctv cameras for both exit and entrance doors. 
+* Embedded deep learning models (Yolo12) for human detecting.
+* Privacy-preserving anonymous detection
 
 ### Prerequisites
 ```bash
@@ -101,7 +103,8 @@ Developed as part of IT4010 Research Project – 2025 (July Intake).
 - Git
 ```
 
-### Installation
+* Realtime calculation share with mobile and desktop users.
+* No GPU dependency – optimized for embedded systems
 
 ```bash
 # Clone repository
