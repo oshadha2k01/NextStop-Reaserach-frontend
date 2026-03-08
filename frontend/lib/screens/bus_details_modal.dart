@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/bus_route_model.dart';
 import '../models/bus_stop.dart';
+import '../models/people_count_model.dart';
+import '../services/api_service.dart';
 import 'route_stops_map.dart';
 import 'arrival_details_modal.dart';
 import 'driver_contact_modal.dart';
 import 'prediction_modal.dart';
+import 'dart:async';
 
 class BusDetailsModal extends StatefulWidget {
   final String busId;
@@ -34,40 +37,49 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
   String? _calculatedTime;
   bool _hasError = false;
   
-  // Simulated IoT data that changes per stop
-  late Map<String, dynamic> _busData;
+  // Live API data
+  PeopleCountModel? _liveData;
+  bool _isLoading = true;
+  Timer? _refreshTimer;
+  
+  // Constants
+  static const int totalSeats = 55;
 
   @override
   void initState() {
     super.initState();
-    _generateBusData();
+    _fetchLiveData();
+    _startAutoRefresh();
+  }
+  
+  void _startAutoRefresh() {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _fetchLiveData();
+    });
+  }
+  
+  Future<void> _fetchLiveData() async {
+    final data = await ApiService.fetchPeopleCount();
+    if (mounted) {
+      setState(() {
+        _liveData = data;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   void dispose() {
     _locationController.dispose();
+    _refreshTimer?.cancel();
     super.dispose();
   }
-
-  void _generateBusData() {
-    // Generate different data based on current stop index
-    final random = (widget.currentStopIndex * 17) % 100;
-    
-    _busData = {
-      'speed': 35 + (random % 30), // 35-65 km/h
-      'latitude': widget.remainingStops.isNotEmpty 
-          ? widget.remainingStops[0].latitude 
-          : 6.9271,
-      'longitude': widget.remainingStops.isNotEmpty 
-          ? widget.remainingStops[0].longitude 
-          : 79.8612,
-      'totalSeats': 52,
-      'occupiedSeats': 20 + (random % 30), // 20-50 seats
-      'isCrowded': (20 + (random % 30)) > 40,
-      'passengersIn': 5 + (random % 10), // 5-15
-      'passengersOut': 3 + (random % 8), // 3-11
-    };
-  }
+  
+  int get occupiedSeats => _liveData?.totalPeople ?? 0;
+  int get availableSeats => totalSeats - occupiedSeats;
+  bool get isCrowded => occupiedSeats > (totalSeats * 0.7);
+  int get passengersIn => _liveData?.inCount ?? 0;
+  int get passengersOut => _liveData?.outCount ?? 0;
 
   void _calculateTime() {
     final location = _locationController.text.trim();
@@ -126,7 +138,7 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
         destinationLocation: targetStop!.name,
         estimatedTime: minutes,
         distance: distance,
-        currentSpeed: _busData['speed'],
+        currentSpeed: 0,
         stopsAway: stopIndex + 1,
         destinationLatitude: targetStop.latitude,
         destinationLongitude: targetStop.longitude,
@@ -136,7 +148,6 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
 
   @override
   Widget build(BuildContext context) {
-    final availableSeats = _busData['totalSeats'] - _busData['occupiedSeats'];
     
     return Container(
       height: MediaQuery.of(context).size.height * 0.75,
@@ -260,7 +271,7 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                               child: _buildInfoItem(
                                 Icons.speed,
                                 'Speed',
-                                '${_busData['speed']} km/h',
+                                'N/A',
                                 primaryColor,
                               ),
                             ),
@@ -273,7 +284,9 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                               child: _buildInfoItem(
                                 Icons.location_on,
                                 'Location',
-                                '${_busData['latitude'].toStringAsFixed(4)}, ${_busData['longitude'].toStringAsFixed(4)}',
+                                widget.remainingStops.isNotEmpty
+                                    ? '${widget.remainingStops[0].latitude.toStringAsFixed(4)}, ${widget.remainingStops[0].longitude.toStringAsFixed(4)}'
+                                    : 'N/A',
                                 Colors.blue,
                               ),
                             ),
@@ -296,13 +309,39 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Seating Information',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: textPrimary,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Seating Information',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: textPrimary,
+                              ),
+                            ),
+                            if (_isLoading)
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            else if (_liveData != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.circle, size: 6, color: Colors.green),
+                                    SizedBox(width: 4),
+                                    Text('LIVE', style: TextStyle(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                         const SizedBox(height: 16),
                         Row(
@@ -310,21 +349,21 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                             Expanded(
                               child: _buildSeatInfo(
                                 'Total Seats',
-                                '${_busData['totalSeats']}',
+                                '$totalSeats',
                                 Colors.grey,
                               ),
                             ),
                             Expanded(
                               child: _buildSeatInfo(
                                 'Occupied',
-                                '${_busData['occupiedSeats']}',
+                                _isLoading ? '...' : '$occupiedSeats',
                                 Colors.red,
                               ),
                             ),
                             Expanded(
                               child: _buildSeatInfo(
                                 'Available',
-                                '$availableSeats',
+                                _isLoading ? '...' : '$availableSeats',
                                 Colors.green,
                               ),
                             ),
@@ -332,9 +371,9 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                         ),
                         const SizedBox(height: 12),
                         LinearProgressIndicator(
-                          value: _busData['occupiedSeats'] / _busData['totalSeats'],
+                          value: _isLoading ? 0 : (occupiedSeats / totalSeats),
                           backgroundColor: Colors.grey[300],
-                          color: _busData['isCrowded'] ? Colors.red : primaryColor,
+                          color: isCrowded ? Colors.red : primaryColor,
                           minHeight: 8,
                           borderRadius: BorderRadius.circular(4),
                         ),
@@ -342,17 +381,17 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                         Row(
                           children: [
                             Icon(
-                              _busData['isCrowded'] ? Icons.warning : Icons.check_circle,
+                              isCrowded ? Icons.warning : Icons.check_circle,
                               size: 16,
-                              color: _busData['isCrowded'] ? Colors.red : Colors.green,
+                              color: isCrowded ? Colors.red : Colors.green,
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              _busData['isCrowded'] ? 'Crowded' : 'Comfortable',
+                              _isLoading ? 'Loading...' : (isCrowded ? 'Crowded' : 'Comfortable'),
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: _busData['isCrowded'] ? Colors.red : Colors.green,
+                                color: isCrowded ? Colors.red : Colors.green,
                               ),
                             ),
                           ],
@@ -374,13 +413,39 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Passenger Movement',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: textPrimary,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Passenger Movement',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: textPrimary,
+                              ),
+                            ),
+                            if (_isLoading)
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            else if (_liveData != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.circle, size: 6, color: Colors.green),
+                                    SizedBox(width: 4),
+                                    Text('LIVE', style: TextStyle(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                         const SizedBox(height: 16),
                         Row(
@@ -389,7 +454,7 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                               child: _buildPassengerInfo(
                                 Icons.login,
                                 'Boarded',
-                                '${_busData['passengersIn']}',
+                                _isLoading ? '...' : '$passengersIn',
                                 Colors.green,
                               ),
                             ),
@@ -398,7 +463,7 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                               child: _buildPassengerInfo(
                                 Icons.logout,
                                 'Alighted',
-                                '${_busData['passengersOut']}',
+                                _isLoading ? '...' : '$passengersOut',
                                 Colors.orange,
                               ),
                             ),
