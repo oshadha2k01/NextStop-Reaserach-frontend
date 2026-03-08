@@ -5,20 +5,18 @@ class PredictionService {
   final ApiService _api = ApiService();
 
   Future<ApiResponse<Map<String, dynamic>>> predictCrowd({
-    required String routeName,
+    required String fromStop,
+    required String toStop,
     required String date,
     required String time,
-    String? fromStop,
-    String? toStop,
   }) {
     return _api.post(
       ApiConfig.crowdPrediction,
       body: {
-        'route': routeName,
+        'fromStop': fromStop,
+        'toStop': toStop,
         'date': date,
         'time': time,
-        if (fromStop != null) 'from': fromStop,
-        if (toStop != null) 'to': toStop,
       },
     );
   }
@@ -41,16 +39,14 @@ class PredictionService {
   }
 
   Future<ApiResponse<Map<String, dynamic>>> calculateFare({
-    required String from,
-    required String to,
-    String? routeName,
+    required String boardingStage,
+    required String alightingStage,
   }) {
     return _api.post(
       ApiConfig.fareCalculation,
       body: {
-        'from': from,
-        'to': to,
-        if (routeName != null) 'route': routeName,
+        'boarding_stage': boardingStage,
+        'alighting_stage': alightingStage,
       },
     );
   }
