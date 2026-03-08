@@ -7,6 +7,7 @@ import 'screens/registration_screen.dart';
 import 'screens/email_verification_screen.dart';
 import 'screens/driver_home_screen.dart';
 import 'User/Home.dart';
+import 'screens/success_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -38,6 +39,7 @@ class MyApp extends StatelessWidget {
         '/registration': (context) => const RegistrationScreen(),
         '/email-verification': (context) => const EmailVerificationScreen(),
         '/home': (context) => const HomePage(),
+        '/s': (context) => const SuccessPage(),
         '/driver-home': (context) => const DriverHomeScreen(),
       },
     );
