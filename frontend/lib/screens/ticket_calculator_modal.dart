@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'dart:async';
 import 'dart:math';
+import '../models/bus_stop.dart';
 import '../models/bus_route_model.dart';
 import '../services/prediction_service.dart';
 
@@ -17,90 +17,88 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
   static const Color textPrimary = Color(0xFF1F2937);
   static const Color textSecondary = Color(0xFF6B7280);
 
-  final TextEditingController _fromController = TextEditingController();
-  final TextEditingController _toController = TextEditingController();
-
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
-  
-  BusRouteModel? _matchedRoute;
+
+  late final List<BusStop> _allStops;
+  BusStop? _selectedBoardingStop;
+  BusStop? _selectedDestinationStop;
+
   bool _isCalculating = false;
   bool _showResult = false;
   Map<String, dynamic>? _ticketResult;
 
   @override
+  void initState() {
+    super.initState();
+    final routes = BusRouteModel.getAllRoutes();
+    _allStops = routes.first.stops;
+  }
+
+  @override
   void dispose() {
-    _fromController.dispose();
-    _toController.dispose();
     _mapController?.dispose();
     super.dispose();
   }
 
-  void _searchRoute() {
-    final from = _fromController.text.trim();
-    final to = _toController.text.trim();
-
-    if (from.isEmpty || to.isEmpty) return;
-
-    final routes = BusRouteModel.searchRoutes(from, to);
-    
-    if (routes.isNotEmpty) {
-      setState(() {
-        _matchedRoute = routes.first;
-      });
-      _updateMap();
-    }
+  void _onStopSelected() {
+    if (_selectedBoardingStop == null || _selectedDestinationStop == null) return;
+    _updateMap();
   }
 
   void _updateMap() {
-    if (_matchedRoute == null) return;
+    if (_selectedBoardingStop == null || _selectedDestinationStop == null) return;
 
     _markers.clear();
     _polylines.clear();
 
-    // Add from location marker
-    if (_matchedRoute!.stops.isNotEmpty) {
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('from'),
-          position: LatLng(
-            _matchedRoute!.stops.first.latitude,
-            _matchedRoute!.stops.first.longitude,
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          infoWindow: InfoWindow(title: 'From: ${_matchedRoute!.stops.first.name}'),
+    // Add boarding location marker
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('from'),
+        position: LatLng(
+          _selectedBoardingStop!.latitude,
+          _selectedBoardingStop!.longitude,
         ),
-      );
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        infoWindow: InfoWindow(title: 'From: ${_selectedBoardingStop!.name}'),
+      ),
+    );
 
-      // Add to location marker
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('to'),
-          position: LatLng(
-            _matchedRoute!.stops.last.latitude,
-            _matchedRoute!.stops.last.longitude,
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(title: 'To: ${_matchedRoute!.stops.last.name}'),
+    // Add destination marker
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('to'),
+        position: LatLng(
+          _selectedDestinationStop!.latitude,
+          _selectedDestinationStop!.longitude,
         ),
-      );
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: InfoWindow(title: 'To: ${_selectedDestinationStop!.name}'),
+      ),
+    );
 
-      // Add route polyline
-      final routePoints = _matchedRoute!.stops
-          .map((stop) => LatLng(stop.latitude, stop.longitude))
-          .toList();
+    // Build polyline between selected stops
+    final fromIndex = _allStops.indexOf(_selectedBoardingStop!);
+    final toIndex = _allStops.indexOf(_selectedDestinationStop!);
+    final startIdx = fromIndex < toIndex ? fromIndex : toIndex;
+    final endIdx = fromIndex < toIndex ? toIndex : fromIndex;
+    final routeStops = _allStops.sublist(startIdx, endIdx + 1);
 
-      _polylines.add(
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: routePoints,
-          color: primaryColor,
-          width: 6,
-          patterns: [PatternItem.dash(30), PatternItem.gap(15)],
-        ),
-      );
-    }
+    final routePoints = routeStops
+        .map((stop) => LatLng(stop.latitude, stop.longitude))
+        .toList();
+
+    _polylines.add(
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: routePoints,
+        color: primaryColor,
+        width: 6,
+        patterns: [PatternItem.dash(30), PatternItem.gap(15)],
+      ),
+    );
 
     setState(() {});
 
@@ -110,14 +108,15 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
   }
 
   void _fitMapToRoute() {
-    if (_matchedRoute == null || _matchedRoute!.stops.isEmpty) return;
+    if (_selectedBoardingStop == null || _selectedDestinationStop == null) return;
 
-    double minLat = _matchedRoute!.stops.first.latitude;
-    double maxLat = _matchedRoute!.stops.first.latitude;
-    double minLng = _matchedRoute!.stops.first.longitude;
-    double maxLng = _matchedRoute!.stops.first.longitude;
+    final stops = [_selectedBoardingStop!, _selectedDestinationStop!];
+    double minLat = stops.first.latitude;
+    double maxLat = stops.first.latitude;
+    double minLng = stops.first.longitude;
+    double maxLng = stops.first.longitude;
 
-    for (var stop in _matchedRoute!.stops) {
+    for (var stop in stops) {
       if (stop.latitude < minLat) minLat = stop.latitude;
       if (stop.latitude > maxLat) maxLat = stop.latitude;
       if (stop.longitude < minLng) minLng = stop.longitude;
@@ -133,12 +132,20 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
   }
 
   double _calculateDistance() {
-    if (_matchedRoute == null || _matchedRoute!.stops.length < 2) return 0;
+    if (_selectedBoardingStop == null || _selectedDestinationStop == null) return 0;
+
+    final fromIndex = _allStops.indexOf(_selectedBoardingStop!);
+    final toIndex = _allStops.indexOf(_selectedDestinationStop!);
+    final startIdx = fromIndex < toIndex ? fromIndex : toIndex;
+    final endIdx = fromIndex < toIndex ? toIndex : fromIndex;
+    final stopsSegment = _allStops.sublist(startIdx, endIdx + 1);
+
+    if (stopsSegment.length < 2) return 0;
 
     double totalDistance = 0;
-    for (int i = 0; i < _matchedRoute!.stops.length - 1; i++) {
-      final stop1 = _matchedRoute!.stops[i];
-      final stop2 = _matchedRoute!.stops[i + 1];
+    for (int i = 0; i < stopsSegment.length - 1; i++) {
+      final stop1 = stopsSegment[i];
+      final stop2 = stopsSegment[i + 1];
       
       // Haversine formula for distance calculation
       const double earthRadius = 6371; // km
@@ -158,10 +165,20 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
   }
 
   Future<void> _calculateTicket() async {
-    if (_matchedRoute == null) {
+    if (_selectedBoardingStop == null || _selectedDestinationStop == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a valid route first'),
+          content: Text('Please select boarding and destination locations'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedBoardingStop!.name == _selectedDestinationStop!.name) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Boarding and destination cannot be the same'),
           backgroundColor: Colors.red,
         ),
       );
@@ -175,9 +192,8 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
     final predictionService = PredictionService();
     final response = await predictionService.calculateFare(
-      from: _matchedRoute!.stops.first.name,
-      to: _matchedRoute!.stops.last.name,
-      routeName: _matchedRoute!.routeName,
+      boardingStage: _selectedBoardingStop!.name,
+      alightingStage: _selectedDestinationStop!.name,
     );
 
     setState(() {
@@ -189,18 +205,23 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
       setState(() {
         _showResult = true;
         _ticketResult = {
-          'distance': (data['distance'] ?? _calculateDistance()).toDouble(),
-          'busFare': (data['busFare'] ?? data['fare'] ?? 0).toDouble(),
-          'trainFare': (data['trainFare'] ?? ((data['busFare'] ?? data['fare'] ?? 0) * 0.7)).toDouble(),
-          'taxiFare': (data['taxiFare'] ?? ((data['busFare'] ?? data['fare'] ?? 0) * 5)).toDouble(),
-          'from': _matchedRoute!.stops.first.name,
-          'to': _matchedRoute!.stops.last.name,
-          'route': _matchedRoute!.routeName,
+          'fare': (data['fare'] ?? 0).toDouble(),
+          'currency': data['currency'] ?? 'LKR',
+          'route_number': data['route_number'] ?? '',
+          'route_name': data['route_name'] ?? '',
+          'service_type': data['service_type'] ?? '',
+          'stages_traveled': data['stages_traveled'] ?? 0,
+          'boarding_stage': data['boarding_stage'] ?? _selectedBoardingStop!.name,
+          'alighting_stage': data['alighting_stage'] ?? _selectedDestinationStop!.name,
+          'boarding_stage_sinhala': data['boarding_stage_sinhala'] ?? '',
+          'alighting_stage_sinhala': data['alighting_stage_sinhala'] ?? '',
         };
       });
     } else {
       // Fallback to local calculation if API fails
       final distance = _calculateDistance();
+      final fromIdx = _allStops.indexOf(_selectedBoardingStop!);
+      final toIdx = _allStops.indexOf(_selectedDestinationStop!);
       double fare;
       if (distance <= 2) {
         fare = 30;
@@ -211,13 +232,16 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
       setState(() {
         _showResult = true;
         _ticketResult = {
-          'distance': distance,
-          'busFare': fare,
-          'trainFare': fare * 0.7,
-          'taxiFare': fare * 5,
-          'from': _matchedRoute!.stops.first.name,
-          'to': _matchedRoute!.stops.last.name,
-          'route': _matchedRoute!.routeName,
+          'fare': fare,
+          'currency': 'LKR',
+          'route_number': '',
+          'route_name': _allStops.isNotEmpty ? 'Route 177: Kaduwela - Kollupitiya' : '',
+          'service_type': 'Normal',
+          'stages_traveled': (toIdx - fromIdx).abs(),
+          'boarding_stage': _selectedBoardingStop!.name,
+          'alighting_stage': _selectedDestinationStop!.name,
+          'boarding_stage_sinhala': '',
+          'alighting_stage_sinhala': '',
         };
       });
     }
@@ -296,7 +320,7 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                   const SizedBox(height: 24),
 
-                  // From Location
+                  // Boarding Location Dropdown
                   const Text(
                     'Boarding Location',
                     style: TextStyle(
@@ -311,25 +335,54 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                       border: Border.all(color: primaryColor.withOpacity(0.3), width: 1.5),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: TextField(
-                      controller: _fromController,
-                      onChanged: (value) => _searchRoute(),
-                      decoration: InputDecoration(
-                        hintText: 'e.g., Kaduwela, Malabe',
-                        hintStyle: TextStyle(color: Colors.grey[400]),
-                        prefixIcon: const Icon(Icons.location_on, color: primaryColor),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 16,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<BusStop>(
+                        isExpanded: true,
+                        value: _selectedBoardingStop,
+                        hint: Row(
+                          children: [
+                            const Icon(Icons.location_on, color: primaryColor),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Select boarding stop',
+                              style: TextStyle(color: Colors.grey[400]),
+                            ),
+                          ],
                         ),
+                        items: _allStops
+                            .where((stop) => stop.name != _selectedDestinationStop?.name)
+                            .map((stop) => DropdownMenuItem<BusStop>(
+                                  value: stop,
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.location_on, color: primaryColor, size: 20),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          stop.name,
+                                          style: const TextStyle(fontSize: 14),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedBoardingStop = value;
+                            _showResult = false;
+                          });
+                          _onStopSelected();
+                        },
                       ),
                     ),
                   ),
 
                   const SizedBox(height: 20),
 
-                  // To Location
+                  // Destination Dropdown
                   const Text(
                     'Destination',
                     style: TextStyle(
@@ -344,18 +397,47 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                       border: Border.all(color: primaryColor.withOpacity(0.3), width: 1.5),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: TextField(
-                      controller: _toController,
-                      onChanged: (value) => _searchRoute(),
-                      decoration: InputDecoration(
-                        hintText: 'e.g., Kollupitiya, Pettah',
-                        hintStyle: TextStyle(color: Colors.grey[400]),
-                        prefixIcon: const Icon(Icons.flag, color: primaryColor),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 16,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<BusStop>(
+                        isExpanded: true,
+                        value: _selectedDestinationStop,
+                        hint: Row(
+                          children: [
+                            const Icon(Icons.flag, color: primaryColor),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Select destination stop',
+                              style: TextStyle(color: Colors.grey[400]),
+                            ),
+                          ],
                         ),
+                        items: _allStops
+                            .where((stop) => stop.name != _selectedBoardingStop?.name)
+                            .map((stop) => DropdownMenuItem<BusStop>(
+                                  value: stop,
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.flag, color: primaryColor, size: 20),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          stop.name,
+                                          style: const TextStyle(fontSize: 14),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedDestinationStop = value;
+                            _showResult = false;
+                          });
+                          _onStopSelected();
+                        },
                       ),
                     ),
                   ),
@@ -363,7 +445,7 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                   const SizedBox(height: 20),
 
                   // Route Info
-                  if (_matchedRoute != null) ...[
+                  if (_selectedBoardingStop != null && _selectedDestinationStop != null) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -371,14 +453,14 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: primaryColor.withOpacity(0.3)),
                       ),
-                      child: Row(
+                      child: const Row(
                         children: [
-                          const Icon(Icons.route, color: primaryColor, size: 20),
-                          const SizedBox(width: 8),
+                          Icon(Icons.route, color: primaryColor, size: 20),
+                          SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              _matchedRoute!.routeName,
-                              style: const TextStyle(
+                              'Route 177: Kaduwela - Kollupitiya',
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: textPrimary,
@@ -392,7 +474,7 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                   ],
 
                   // Map Display
-                  if (_matchedRoute != null) ...[
+                  if (_selectedBoardingStop != null && _selectedDestinationStop != null) ...[
                     const Text(
                       'Journey Route',
                       style: TextStyle(
@@ -420,8 +502,8 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                         child: GoogleMap(
                           initialCameraPosition: CameraPosition(
                             target: LatLng(
-                              _matchedRoute!.stops.first.latitude,
-                              _matchedRoute!.stops.first.longitude,
+                              _selectedBoardingStop!.latitude,
+                              _selectedBoardingStop!.longitude,
                             ),
                             zoom: 12,
                           ),
@@ -516,6 +598,7 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Header
                           Row(
                             children: [
                               Container(
@@ -544,7 +627,39 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                           const SizedBox(height: 20),
 
-                          // Journey Info
+                          // Fare Display
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              children: [
+                                const Text(
+                                  'Bus Fare',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${_ticketResult!['currency']} ${_ticketResult!['fare'].toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    color: primaryColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // Route & Service Info
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -553,24 +668,75 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                             ),
                             child: Column(
                               children: [
+                                if (_ticketResult!['route_number'].toString().isNotEmpty) ...[
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.directions_bus, color: primaryColor, size: 20),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        'Route Number',
+                                        style: TextStyle(fontSize: 14, color: textSecondary),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        _ticketResult!['route_number'].toString(),
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: textPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(height: 20),
+                                ],
+                                if (_ticketResult!['route_name'].toString().isNotEmpty) ...[
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.route, color: primaryColor, size: 20),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        'Route Name',
+                                        style: TextStyle(fontSize: 14, color: textSecondary),
+                                      ),
+                                      const Spacer(),
+                                      Flexible(
+                                        child: Text(
+                                          _ticketResult!['route_name'].toString(),
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: textPrimary,
+                                          ),
+                                          textAlign: TextAlign.end,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(height: 20),
+                                ],
                                 Row(
                                   children: [
-                                    const Icon(Icons.straighten, color: primaryColor, size: 20),
+                                    const Icon(Icons.category, color: primaryColor, size: 20),
                                     const SizedBox(width: 8),
                                     const Text(
-                                      'Distance',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: textSecondary,
-                                      ),
+                                      'Service Type',
+                                      style: TextStyle(fontSize: 14, color: textSecondary),
                                     ),
                                     const Spacer(),
-                                    Text(
-                                      '${_ticketResult!['distance'].toStringAsFixed(2)} km',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: textPrimary,
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: primaryColor.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        _ticketResult!['service_type'].toString(),
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: primaryColor,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -578,22 +744,19 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                                 const Divider(height: 20),
                                 Row(
                                   children: [
-                                    const Icon(Icons.payments, color: Colors.green, size: 20),
+                                    const Icon(Icons.pin_drop, color: primaryColor, size: 20),
                                     const SizedBox(width: 8),
                                     const Text(
-                                      'Bus Fare',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: textSecondary,
-                                      ),
+                                      'Stages Traveled',
+                                      style: TextStyle(fontSize: 14, color: textSecondary),
                                     ),
                                     const Spacer(),
                                     Text(
-                                      'Rs. ${_ticketResult!['busFare'].toStringAsFixed(2)}',
+                                      '${_ticketResult!['stages_traveled']}',
                                       style: const TextStyle(
-                                        fontSize: 20,
+                                        fontSize: 16,
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.green,
+                                        color: textPrimary,
                                       ),
                                     ),
                                   ],
@@ -604,49 +767,12 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                           const SizedBox(height: 16),
 
-                          // Alternative Transport
-                          const Text(
-                            'Alternative Transport Options',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTransportCard(
-                                  Icons.train,
-                                  'Train',
-                                  _ticketResult!['trainFare'],
-                                  Colors.blue,
-                                  'Recommended',
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildTransportCard(
-                                  Icons.local_taxi,
-                                  'Taxi',
-                                  _ticketResult!['taxiFare'],
-                                  Colors.orange,
-                                  'Expensive',
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 16),
-
-                          // Journey Summary
+                          // Journey Details
                           Container(
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.grey[50],
-                              borderRadius: BorderRadius.circular(10),
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -656,7 +782,7 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                                     const Icon(Icons.info_outline, size: 16, color: textSecondary),
                                     const SizedBox(width: 6),
                                     const Text(
-                                      'Journey Summary',
+                                      'Journey Details',
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -665,18 +791,80 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                                     ),
                                   ],
                                 ),
+                                const SizedBox(height: 12),
+                                // Boarding Stage
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(Icons.location_on, color: Colors.green, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _ticketResult!['boarding_stage'].toString(),
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: textPrimary,
+                                            ),
+                                          ),
+                                          if (_ticketResult!['boarding_stage_sinhala'].toString().isNotEmpty)
+                                            Text(
+                                              _ticketResult!['boarding_stage_sinhala'].toString(),
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: textSecondary,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                                 const SizedBox(height: 8),
-                                Text(
-                                  'From: ${_ticketResult!['from']}',
-                                  style: const TextStyle(fontSize: 12, color: textSecondary),
+                                // Arrow
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 8),
+                                  child: Column(
+                                    children: [
+                                      Container(width: 2, height: 16, color: primaryColor.withOpacity(0.3)),
+                                      Icon(Icons.arrow_downward, size: 16, color: primaryColor.withOpacity(0.5)),
+                                    ],
+                                  ),
                                 ),
-                                Text(
-                                  'To: ${_ticketResult!['to']}',
-                                  style: const TextStyle(fontSize: 12, color: textSecondary),
-                                ),
-                                Text(
-                                  'Route: ${_ticketResult!['route']}',
-                                  style: const TextStyle(fontSize: 12, color: textSecondary),
+                                const SizedBox(height: 8),
+                                // Alighting Stage
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(Icons.flag, color: Colors.red, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _ticketResult!['alighting_stage'].toString(),
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: textPrimary,
+                                            ),
+                                          ),
+                                          if (_ticketResult!['alighting_stage_sinhala'].toString().isNotEmpty)
+                                            Text(
+                                              _ticketResult!['alighting_stage_sinhala'].toString(),
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: textSecondary,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -694,53 +882,4 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
     );
   }
 
-  Widget _buildTransportCard(IconData icon, String name, double fare, Color color, String tag) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 6),
-          Text(
-            name,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Rs. ${fare.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              tag,
-              style: TextStyle(
-                fontSize: 10,
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

@@ -18,14 +18,14 @@ class ApiConfig {
   static const String busDevice = '$baseUrl/bus-device';
 
   // Prediction endpoints (ML)
-  static const String crowdPrediction = '$baseUrl/prediction';
+  static const String crowdPrediction = '$baseUrl/predict/route-predict';
   static const String destinationPrediction = '$baseUrl/destination/predict';
 
   // Fare endpoint
-  static const String fareCalculation = '$baseUrl/fare';
+  static const String fareCalculation = '$baseUrl/fare/calculate';
 
   // Notifications
-  static const String notify = '$baseUrl/notify';
+  static const String notify = '$baseUrl/notify/board';
 
   // Dashboard
   static const String dashboard = '$baseUrl/dashboard';

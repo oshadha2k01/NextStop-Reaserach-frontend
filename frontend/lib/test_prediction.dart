@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'models/bus_stop.dart';
 import 'screens/prediction_modal.dart';
+import 'screens/crowd_prediction_modal.dart';
+import 'screens/ticket_calculator_modal.dart';
 
 void main() {
   runApp(const TestPredictionApp());
@@ -91,7 +93,45 @@ class TestHomePage extends StatelessWidget {
                 );
               },
               icon: const Icon(Icons.psychology),
-              label: const Text('Open Prediction Modal'),
+              label: const Text('Destination Prediction'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF6B35),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => const CrowdPredictionModal(),
+                );
+              },
+              icon: const Icon(Icons.people_alt),
+              label: const Text('Crowd Prediction'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => const TicketCalculatorModal(),
+                );
+              },
+              icon: const Icon(Icons.confirmation_number),
+              label: const Text('Ticket Calculator'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFF6B35),
                 foregroundColor: Colors.white,
