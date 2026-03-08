@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
+import '../config/api_config.dart';
 import 'driver_home_screen.dart';
 
 class DriverLoginScreen extends StatefulWidget {
-  const DriverLoginScreen({Key? key}) : super(key: key);
+  const DriverLoginScreen({super.key});
 
   @override
   State<DriverLoginScreen> createState() => _DriverLoginScreenState();
@@ -76,23 +79,50 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
       _isLoading = true;
     });
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
+    final response = await ApiService().post(
+      ApiConfig.driverLogin,
+      body: {
+        'email': email,
+        'password': password,
+      },
+    );
 
-    // Save driver session
-    await _saveDriverSession();
+    if (response.success && response.data != null) {
+      await AuthService().saveToken(response.data!['token'] ?? '');
+      await AuthService().saveUserType('driver');
 
-    setState(() {
-      _isLoading = false;
-    });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('is_driver_logged_in', true);
+      await prefs.setString('driver_email', email);
+      await prefs.setString('driver_bus_number', response.data!['busNumber'] ?? '');
+      await prefs.setString('driver_route', response.data!['route'] ?? '');
+      await prefs.setString('driver_name', response.data!['name'] ?? '');
+      await prefs.setString('driver_id', response.data!['_id'] ?? '');
 
-    // Navigate to Driver Home
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => const DriverHomeScreen(),
-        ),
-      );
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const DriverHomeScreen(),
+          ),
+        );
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response.errorMessage ?? 'Login failed. Check your credentials.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import '../services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+  const SplashScreen({super.key});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -26,11 +27,27 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     );
     
     _animationController.forward();
-    
-    // Navigate to main screen after delay - reduced to 2 seconds
-    Timer(const Duration(seconds: 2), () {
+
+    _checkAuthAndNavigate();
+  }
+
+  Future<void> _checkAuthAndNavigate() async {
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (!mounted) return;
+
+    final isAuthenticated = await AuthService().isAuthenticated();
+    final userType = await AuthService().getUserType();
+
+    if (isAuthenticated) {
+      if (userType == 'driver') {
+        Navigator.of(context).pushReplacementNamed('/driver-home');
+      } else {
+        Navigator.of(context).pushReplacementNamed('/home');
+      }
+    } else {
       Navigator.of(context).pushReplacementNamed('/onboarding');
-    });
+    }
   }
 
   @override
@@ -52,7 +69,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // Logo only
-                  Container(
+                  SizedBox(
                     width: 200,
                     height: 200,
                     child: Image.asset(

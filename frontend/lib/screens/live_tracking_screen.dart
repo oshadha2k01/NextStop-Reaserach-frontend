@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/bus_route_model.dart';
+import '../services/socket_service.dart';
 
 class LiveTrackingScreen extends StatefulWidget {
-  const LiveTrackingScreen({Key? key}) : super(key: key);
+  const LiveTrackingScreen({super.key});
 
   @override
   State<LiveTrackingScreen> createState() => _LiveTrackingScreenState();
@@ -18,8 +19,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   static const Color textSecondary = Color(0xFF6B7280);
 
   GoogleMapController? _mapController;
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   
   final TextEditingController _destinationController = TextEditingController();
   
@@ -88,9 +89,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   }
 
   @override
+  @override
   void dispose() {
     _busMovementTimer?.cancel();
     _metricsUpdateTimer?.cancel();
+    SocketService().off('bus-location-update');
     _mapController?.dispose();
     _destinationController.dispose();
     super.dispose();
@@ -157,7 +160,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         rotation: _calculateBearing(),
         infoWindow: InfoWindow(
           title: '🚌 Bus $_busId',
-          snippet: '$_busName',
+          snippet: _busName,
         ),
       ),
     );
@@ -308,6 +311,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       _updateNavigationInstructions();
     });
 
+    // Try to use real-time Socket.IO bus tracking
+    _connectBusSocket();
+
+    // Fallback: Timer-based simulation runs alongside
     _busMovementTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       if (_currentRouteIndex < _routePoints.length - 1) {
         _animateBusMovement();
@@ -318,6 +325,30 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
     _metricsUpdateTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       _updateTripMetrics();
+    });
+  }
+
+  Future<void> _connectBusSocket() async {
+    final socketService = SocketService();
+    await socketService.connect();
+
+    socketService.on('bus-location-update', (data) {
+      if (data == null || !mounted) return;
+
+      final busNumber = data['busNumber'] ?? '';
+      if (busNumber == _busId) {
+        final lat = (data['latitude'] ?? 0).toDouble();
+        final lng = (data['longitude'] ?? 0).toDouble();
+        final speed = (data['speed'] ?? 0).toDouble();
+
+        setState(() {
+          _busLocation = LatLng(lat, lng);
+          _busSpeed = speed;
+          _updateBusMarker();
+          _calculateDistance();
+          _drawActiveRoute();
+        });
+      }
     });
   }
 
@@ -775,12 +806,12 @@ class DriverComplaintModal extends StatefulWidget {
   final String driverLicense;
 
   const DriverComplaintModal({
-    Key? key,
+    super.key,
     required this.busId,
     required this.busName,
     required this.driverName,
     required this.driverLicense,
-  }) : super(key: key);
+  });
 
   @override
   State<DriverComplaintModal> createState() => _DriverComplaintModalState();

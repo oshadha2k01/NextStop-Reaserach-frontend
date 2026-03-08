@@ -10,11 +10,11 @@ class RouteStopsMapScreen extends StatefulWidget {
   final String currentLocation;
 
   const RouteStopsMapScreen({
-    Key? key,
+    super.key,
     required this.busId,
     required this.allStops,
     required this.currentLocation,
-  }) : super(key: key);
+  });
 
   @override
   State<RouteStopsMapScreen> createState() => _RouteStopsMapScreenState();
@@ -26,8 +26,8 @@ class _RouteStopsMapScreenState extends State<RouteStopsMapScreen> {
   static const Color textPrimary = Color(0xFF1F2937);
   
   GoogleMapController? _mapController;
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   BitmapDescriptor? _busStopIcon;
 
   @override

@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import '../models/bus_stop.dart';
+import '../services/socket_service.dart';
 
 class DriverContactModal extends StatefulWidget {
   final String busId;
@@ -11,11 +12,11 @@ class DriverContactModal extends StatefulWidget {
   final List<BusStop> allStops;
 
   const DriverContactModal({
-    Key? key,
+    super.key,
     required this.busId,
     required this.currentLocation,
     required this.allStops,
-  }) : super(key: key);
+  });
 
   @override
   State<DriverContactModal> createState() => _DriverContactModalState();
@@ -31,8 +32,8 @@ class _DriverContactModalState extends State<DriverContactModal> {
   bool _isLoadingLocation = true;
   String _locationText = 'Fetching your location...';
   String? _selectedMessage;
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   BitmapDescriptor? _userIcon;
 
   final List<String> _quickMessages = [
@@ -235,7 +236,15 @@ class _DriverContactModalState extends State<DriverContactModal> {
       return;
     }
 
-    // Show success message
+    // Emit boarding request via Socket.IO
+    SocketService().emit('passenger-boarding-request', {
+      'busId': widget.busId,
+      'message': _selectedMessage,
+      'latitude': _userLocation?.latitude ?? 0,
+      'longitude': _userLocation?.longitude ?? 0,
+      'title': 'Passenger Request',
+    });
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Message sent to driver: "$_selectedMessage"'),
@@ -244,7 +253,6 @@ class _DriverContactModalState extends State<DriverContactModal> {
       ),
     );
 
-    // Close modal after short delay
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) {
         Navigator.pop(context);

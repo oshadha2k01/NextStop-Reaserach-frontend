@@ -1,152 +1,195 @@
-# Smart Bus System for Real-Time Passenger Management
+# Smart Bus System - Flutter Mobile Application
 
 ## 📌 Project Overview
 
-The *Smart Bus System for Real-Time Passenger Management* is an IoT-driven, intelligent public transport solution designed to improve efficiency, accessibility, and passenger experience in Sri Lanka’s bus network. The system integrates *real-time tracking, passenger occupancy monitoring, mobile interaction, and AI-driven fleet optimization* into a single smart ecosystem.
+This repository contains the **Flutter mobile application** for the Smart Bus System. The app provides real-time bus tracking, occupancy monitoring, and accessible journey planning for passengers.
 
-This project is developed as part of the *IT4010 Research Project – 2025 (July Intake)* under the *Information Technology (IT)* specialization.
-
----
-
-## 🎯 Main Objectives
-
-* Provide *real-time bus location and accurate ETA predictions*
-* Reduce *overcrowding* by monitoring passenger occupancy
-* Enable *inclusive and accessible passenger interaction*
-* Optimize *routes and fleet usage* using AI-driven analytics
+Developed as part of IT4010 Research Project – 2025 (July Intake).
 
 ---
 
-## 🧠 System Architecture
+## 🖥️ Application Architecture
 
-
-+-------------------+        +---------------------+
-|   GPS & Sensors   |        | Vision & Thermal    |
-| (Bus IoT Module)  |        | Sensors (Onboard)   |
-+---------+---------+        +----------+----------+
-          |                               |
-          v                               v
-+--------------------------------------------------+
-|          Edge Processing (Arduino / MCU)          |
-|  - Data filtering                                |
-|  - Temporary buffering                           |
-+-------------------+------------------------------+
-                    |
-                    v
-        +----------------------------------+
-        |   Cloud Backend & Database       |
-        |  - Real-time data ingestion      |
-        |  - Historical data storage       |
-        +---------+------------------------+
-                  |
-        +---------+----------+------------------+
-        |                    |                  |
-        v                    v                  v
-+---------------+   +----------------+  +----------------------+
-| LSTM ETA      |   | Fleet & Route  |  | Passenger Interaction|
-| Prediction ML |   | Optimization   |  | Mobile Application   |
-+---------------+   +----------------+  +----------------------+
-        \_____________________|_______________________/
-                             v
-                   Optimized & Smart Bus Service
-
+```
++----------------------------------------------------------+
+|              Flutter Mobile Application                   |
++----------------------------------------------------------+
+|                                                           |
+|  +-----------------+        +---------------------------+ |
+|  | Presentation    |        | State Management          | |
+|  | (UI/Screens)    |   ←→   | (Provider)                | |
+|  +-----------------+        +---------------------------+ |
+|           |                              |                |
+|  +-------------------------------------------------+     |
+|  | Data Layer (API/WebSocket/Local Storage)        |     |
+|  +-------------------------------------------------+     |
+|                          |                                |
++--------------------------|--------------------------------+
+                           ↓
+              +------------------------+
+              |   Backend Services     |
+              +------------------------+
+```
 
 ---
 
-## 🧩 Core Functional Modules
+## 🛠️ Technology Stack
 
-### 1️⃣ IoT-Based Real-Time Bus Tracking & ETA Prediction
-
-*Owner:* Weerakoon W.M.D.P (IT22131560)
-
-*Functionality:*
-
-* GPS-based real-time bus tracking using Arduino
-* Hybrid *GSM + Wi-Fi* communication
-* Cloud-based data pipeline
-* *LSTM machine learning model* for accurate ETA prediction
-
-*Novelty:*
-
-* Context-aware ETA prediction using traffic, weather, and event data
-* Low-cost and scalable IoT deployment for developing regions
+- **Framework:** Flutter 3.x
+- **Language:** Dart 3.x
+- **State Management:** Provider
+- **Maps:** Google Maps Flutter
+- **Real-time:** WebSocket, Firebase Messaging
+- **Storage:** Hive, Shared Preferences
+- **HTTP Client:** Dio
+- **Localization:** Flutter Localizations (English, Sinhala, Tamil)
+- **Accessibility:** Flutter TTS, Speech to Text
 
 ---
 
-### 2️⃣ Vision-Based Passenger Counting & Occupancy Monitoring
+## 🧩 Key Features
 
-*Owner:* Abeysekara W.R.G.M (IT22271150)
+### Real-Time Bus Tracking
+- Live bus location on Google Maps
+- ETA countdown timer
+- Route visualization with polylines
 
-*Functionality:*
+### Occupancy Monitoring
+- Real-time seat availability display
+- Color-coded crowding indicators
+- Occupancy alerts
 
-* Real-time passenger counting using cameras and thermal sensors
-* Embedded deep learning models (Tiny-YOLOv3 / MobileNet)
-* Privacy-preserving anonymous detection
+### Accessibility
+- Screen reader support
+- Voice commands
+- Audio announcements
+- High contrast mode
+- Multi-language support (English, Sinhala, Tamil)
 
-*Novelty:*
+### Journey Planning
+- Route search with autocomplete
+- Fare estimation
+- Alternative route suggestions
+- Favorite routes management
 
-* Hybrid sensing (thermal + depth cameras)
-* No GPU dependency – optimized for embedded systems
-
----
-
-### 3️⃣ Mobile-Based Passenger Interaction & Accessibility System
-
-*Owner:* Chandrasekara C.M.P.V (IT22286246)
-
-*Functionality:*
-
-* Mobile app for real-time bus updates
-* Stop request and seat availability alerts
-* Multilingual, audio, and vibration support
-
-*Novelty:*
-
-* Inclusive design for differently-abled users
-* Smart travel suggestions based on live occupancy
-
----
-### 4️⃣ Central Fleet Management & Route Optimization Engine
-
-**Owner:** Pathiraja H.P.M.O.N (IT22230492)
-
-#### Functionality
-- AI/ML-based prediction model using real-time IoT data to estimate bus arrival time at the passenger’s selected destination before onboarding.
-- Dynamic ticket price calculation based on the start and destination locations, using travel distance calculated before the journey begins.
-- Live bus tracking with real-time alerts and warnings generated from passenger complaints related to driver behavior.
-
-#### Novelty
-- Pre-onboarding AI/ML arrival-time prediction that allows passengers to know the expected travel duration in advance.
-- Transparent ticket pricing to reduce corruption and improve driver behavior through real-time passenger feedback and notifications.
+### User Feedback
+- Driver ratings
+- Complaint submission
+- Real-time notifications
 
 ---
 
-## 👥 Project Team
+## 📱 Main Screens
 
-| Name                  | Registration Number | Responsibility                  |
-| --------------------- | ------------------- | ------------------------------- |
-| Weerakoon W.M.D.P     | IT22131560          | IoT Tracking & ETA Prediction   |
-| Pathiraja H.P.M.O.N   | IT22230492          | Fleet Management & Optimization |
-| Chandrasekara C.M.P.V | IT22286246          | Mobile App & Accessibility      |
-| Abeysekara W.R.G.M    | IT22271150          | Passenger Counting & Vision     |
-
----
-
-## 🛠️ Technologies Used
-
-* *Hardware:* Arduino, GPS, Thermal Sensors, Cameras
-* *Networking:* GSM, Wi-Fi
-* *Backend:* Cloud Database, REST APIs
-* *AI/ML:* LSTM, Tiny-YOLOv3, MobileNet
-* *Mobile:* Flutter / Android
-* *Analytics:* Python, Data Analytics
+1. **Splash & Onboarding**
+2. **Login/Register**
+3. **Home** - Map with nearby buses
+4. **Search** - Route planning
+5. **Live Tracking** - Real-time bus tracking
+6. **Favorites** - Saved routes and stops
+7. **Profile & Settings** - User preferences
 
 ---
 
-## 📌 Conclusion
+## 🚀 Setup
 
-This Smart Bus System introduces a *scalable, intelligent, and inclusive public transport solution* tailored for Sri Lanka. By integrating IoT, AI, computer vision, and mobile technologies, the system enhances reliability, reduces congestion, and improves daily commuting experiences for millions of passengers.
+### Prerequisites
+```bash
+- Flutter SDK 3.0+
+- Dart SDK 3.0+
+- Android Studio / VS Code
+- Git
+```
+
+### Installation
+
+```bash
+# Clone repository
+git clone <repository-url>
+cd frontend
+
+# Install dependencies
+flutter pub get
+
+# Run app
+flutter run
+```
+
+### Environment Setup
+
+Create `.env` file:
+```env
+API_BASE_URL=your_api_url
+GOOGLE_MAPS_API_KEY=your_maps_key
+```
 
 ---
 
-📄 This README.md is prepared for academic and project documentation purposes (IT4010 Research Project – 2025)
+## 📂 Project Structure
+
+```
+lib/
+├── main.dart
+├── core/
+│   ├── constants/
+│   ├── theme/
+│   └── network/
+├── features/
+│   ├── authentication/
+│   ├── home/
+│   ├── tracking/
+│   └── profile/
+├── shared/
+│   ├── widgets/
+│   └── services/
+└── l10n/
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run tests
+flutter test
+
+# Run with coverage
+flutter test --coverage
+```
+
+---
+
+## 📦 Build
+
+```bash
+# Android APK
+flutter build apk --release
+
+# Android App Bundle
+flutter build appbundle --release
+
+# iOS
+flutter build ios --release
+```
+
+---
+
+## 👥 Team
+
+| Name                  | ID         | Role                    |
+| --------------------- | ---------- | ----------------------- |
+| Weerakoon W.M.D.P     | IT22131560 | IoT & ETA Prediction    |
+| Pathiraja H.P.M.O.N   | IT22230492 | Fleet Management        |
+| Chandrasekara C.M.P.V | IT22286246 | Mobile App Development  |
+| Abeysekara W.R.G.M    | IT22271150 | Passenger Counting      |
+
+---
+
+## 📞 Support
+
+- **Issue Tracker:** GitHub Issues
+- **Documentation:** Project Wiki
+
+---
+
+📄 IT4010 Research Project – 2025
