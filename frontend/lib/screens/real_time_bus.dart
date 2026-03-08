@@ -3,9 +3,26 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 import '../models/bus_route_model.dart';
 import '../services/socket_service.dart';
-import 'bus_details_modal.dart';
+
+// --- ADDED MISSING BUS DATA CLASS ---
+class BusData {
+  final String busId;
+  int currentStopIndex;
+  double progress;
+  LatLng position;
+
+  BusData({
+    required this.busId,
+    required this.currentStopIndex,
+    required this.progress,
+    required this.position,
+  });
+}
 
 class RealTimeBusScreen extends StatefulWidget {
   const RealTimeBusScreen({super.key});
@@ -27,9 +44,11 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
   
-  // Hardcoded IoT bus data - 2 buses per route
-  final Map<String, List<BusData>> _busData = {};
-  Timer? _animationTimer;
+  Map<String, List<BusData>> _busData = {};
+  
+  // LIVE GPS TRACKING VARIABLES
+  Position? _currentDevicePosition;
+  StreamSubscription<Position>? _positionStream;
   BitmapDescriptor? _busIcon;
 
   @override
@@ -39,17 +58,17 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     _allRoutes = BusRouteModel.getAllRoutes();
     if (_allRoutes.isNotEmpty) {
       _selectedRoute = _allRoutes[0];
-      _initializeBusData();
       _updateMapForRoute();
-      _startBusAnimation();
+      // CONNECT TO BACKEND SOCKET
       _connectBusSocket();
     }
+    // Start tracking the phone
+    _startTrackingDeviceAsBus();
   }
 
   @override
   void dispose() {
-    _animationTimer?.cancel();
-    SocketService().off('bus-location-update');
+    _positionStream?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
@@ -71,13 +90,50 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
         if (busIndex >= 0) {
           setState(() {
             buses[busIndex].position = LatLng(lat, lng);
-            _updateBusMarkers();
+            // REPLACED BROKEN CALL WITH THE CORRECT RENDER METHOD
+            if (_currentDevicePosition != null) {
+              _updateDeviceAndBusMarkers(_currentDevicePosition!);
+            }
           });
         }
       }
     });
   }
 
+  // Gets device location and speed
+  Future<void> _startTrackingDeviceAsBus() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+
+    // Get initial position
+    Position initialPosition = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    if (mounted) {
+      _updateDeviceAndBusMarkers(initialPosition);
+      // Center the camera on the user's first location
+      _mapController?.animateCamera(CameraUpdate.newLatLngZoom(
+        LatLng(initialPosition.latitude, initialPosition.longitude), 15));
+    }
+
+    // Listen to location changes continuously
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5, // Update every 5 meters
+      ),
+    ).listen((Position position) {
+      if (mounted) {
+        _updateDeviceAndBusMarkers(position);
+      }
+    });
+  }
+
+  // Your custom bus drawing
   Future<void> _createBusIcon() async {
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
@@ -124,76 +180,12 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     final uint8List = byteData!.buffer.asUint8List();
     
     _busIcon = BitmapDescriptor.fromBytes(uint8List);
-    setState(() {});
-  }
-
-  void _initializeBusData() {
-    _busData.clear();
     
-    for (var route in _allRoutes) {
-      if (route.stops.length >= 2) {
-        _busData[route.routeName] = [
-          // Bus 1 - starts at first stop
-          BusData(
-            busId: '${route.routeName.split(':')[0].trim()}-A',
-            currentStopIndex: 0,
-            progress: 0.0,
-            position: LatLng(route.stops[0].latitude, route.stops[0].longitude),
-          ),
-          // Bus 2 - starts at middle stop
-          BusData(
-            busId: '${route.routeName.split(':')[0].trim()}-B',
-            currentStopIndex: route.stops.length ~/ 2,
-            progress: 0.0,
-            position: LatLng(
-              route.stops[route.stops.length ~/ 2].latitude,
-              route.stops[route.stops.length ~/ 2].longitude,
-            ),
-          ),
-        ];
-      }
+    if (_currentDevicePosition != null) {
+      _updateDeviceAndBusMarkers(_currentDevicePosition!);
+    } else {
+      setState(() {});
     }
-  }
-
-  void _startBusAnimation() {
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
-      if (_selectedRoute == null) return;
-      
-      setState(() {
-        final buses = _busData[_selectedRoute!.routeName];
-        if (buses == null) return;
-
-        for (var bus in buses) {
-          // Move bus along route - slower speed
-          bus.progress += 0.008;
-
-          if (bus.progress >= 1.0) {
-            // Move to next stop
-            bus.progress = 0.0;
-            bus.currentStopIndex++;
-            
-            if (bus.currentStopIndex >= _selectedRoute!.stops.length - 1) {
-              // Reached end, restart from beginning
-              bus.currentStopIndex = 0;
-            }
-          }
-
-          // Calculate interpolated position with exact coordinates
-          final currentStop = _selectedRoute!.stops[bus.currentStopIndex];
-          final nextStop = _selectedRoute!.stops[bus.currentStopIndex + 1];
-          
-          // Use precise calculation for accurate positioning
-          final lat = currentStop.latitude + 
-                     (nextStop.latitude - currentStop.latitude) * bus.progress;
-          final lng = currentStop.longitude + 
-                     (nextStop.longitude - currentStop.longitude) * bus.progress;
-          
-          bus.position = LatLng(lat, lng);
-        }
-        
-        _updateBusMarkers();
-      });
-    });
   }
 
   void _updateMapForRoute() {
@@ -202,7 +194,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     _markers.clear();
     _polylines.clear();
 
-    // Add stop markers with better visibility
+    // Add stop markers
     for (int i = 0; i < _selectedRoute!.stops.length; i++) {
       final stop = _selectedRoute!.stops[i];
       _markers.add(
@@ -223,7 +215,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       );
     }
 
-    // Add route polyline with better visibility
+    // Add route polyline
     final routePoints = _selectedRoute!.stops
         .map((stop) => LatLng(stop.latitude, stop.longitude))
         .toList();
@@ -238,63 +230,61 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       ),
     );
 
-    _updateBusMarkers();
+    if (_currentDevicePosition != null) {
+      _updateDeviceAndBusMarkers(_currentDevicePosition!);
+    }
 
-    // Move camera to show entire route
     if (_mapController != null && _selectedRoute!.stops.isNotEmpty) {
       _fitMapToRoute();
     }
   }
 
-  void _updateBusMarkers() {
-    if (_selectedRoute == null || _busIcon == null) return;
+  void _updateDeviceAndBusMarkers(Position position) {
+    _currentDevicePosition = position;
+    
+    setState(() {
+      // Remove old markers
+      _markers.removeWhere((marker) => 
+        marker.markerId.value == 'device_live_bus' || 
+        marker.markerId.value == 'user_location_pin');
 
-    // Remove old bus markers
-    _markers.removeWhere((marker) => marker.markerId.value.contains('bus_'));
+      // 1. ADD THE USER LOCATION PIN
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('user_location_pin'),
+          position: LatLng(position.latitude, position.longitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          infoWindow: const InfoWindow(title: 'Your Location'),
+          zIndex: 1, // Keep it under the bus icon
+        ),
+      );
 
-    // Add current bus markers with custom bus icon
-    final buses = _busData[_selectedRoute!.routeName];
-    if (buses != null) {
-      for (int i = 0; i < buses.length; i++) {
-        final bus = buses[i];
+      // 2. ADD THE CUSTOM BUS ICON
+      if (_busIcon != null) {
         _markers.add(
           Marker(
-            markerId: MarkerId('bus_${bus.busId}'),
-            position: bus.position,
+            markerId: const MarkerId('device_live_bus'),
+            position: LatLng(position.latitude + 0.0005, position.longitude + 0.0005), 
             icon: _busIcon!,
-            infoWindow: InfoWindow(
-              title: '🚌 Bus ${bus.busId}',
-              snippet: 'Next: ${_selectedRoute!.stops[bus.currentStopIndex + 1].name}',
-            ),
             anchor: const Offset(0.5, 0.5),
-            flat: true,
-            zIndex: 10,
+            zIndex: 10, // Keep it on top of the user pin
             onTap: () {
-              _showBusDetails(bus);
+              // Open modal when the bus is tapped
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (context) => DeviceBusLiveDetailsModal(
+                  latitude: position.latitude,
+                  longitude: position.longitude,
+                  speedInMps: position.speed,
+                ),
+              );
             },
           ),
         );
       }
-    }
-  }
-
-  void _showBusDetails(BusData bus) {
-    // Get remaining stops from current position
-    final remainingStops = _selectedRoute!.stops.sublist(bus.currentStopIndex + 1);
-    final currentStop = _selectedRoute!.stops[bus.currentStopIndex];
-    
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => BusDetailsModal(
-        busId: bus.busId,
-        currentLocation: currentStop.name,
-        remainingStops: remainingStops,
-        allRouteStops: _selectedRoute!.stops,
-        currentStopIndex: bus.currentStopIndex,
-      ),
-    );
+    });
   }
 
   void _fitMapToRoute() {
@@ -342,7 +332,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       ),
       body: Column(
         children: [
-          // Route Selector with updated styling
+          // Route Selector
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -433,7 +423,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
             ),
           ),
 
-          // Map with enhanced readability
+          // Map
           Expanded(
             child: Container(
               margin: const EdgeInsets.all(16),
@@ -458,6 +448,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
                   ),
                   markers: _markers,
                   polylines: _polylines,
+                  myLocationEnabled: true,
                   myLocationButtonEnabled: true,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
@@ -475,7 +466,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
             ),
           ),
 
-          // Legend with updated styling
+          // Legend
           Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -519,7 +510,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 13,
               color: textPrimary,
               fontWeight: FontWeight.w600,
@@ -531,17 +522,334 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
   }
 }
 
-// Bus data model for IoT simulation
-class BusData {
-  final String busId;
-  int currentStopIndex;
-  double progress; // 0.0 to 1.0 between stops
-  LatLng position;
+// ======================================================================
+// LIVE DEVICE-AS-BUS DETAILS MODAL (API-DRIVEN, NO TEXT BOX)
+// ======================================================================
+class DeviceBusLiveDetailsModal extends StatefulWidget {
+  final double latitude;
+  final double longitude;
+  final double speedInMps;
 
-  BusData({
-    required this.busId,
-    required this.currentStopIndex,
-    required this.progress,
-    required this.position,
+  const DeviceBusLiveDetailsModal({
+    super.key,
+    required this.latitude,
+    required this.longitude,
+    required this.speedInMps,
   });
+
+  @override
+  State<DeviceBusLiveDetailsModal> createState() => _DeviceBusLiveDetailsModalState();
+}
+
+class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
+  static const Color primaryColor = Color(0xFFFF6B35);
+  
+  bool _isLoadingEta = false;
+  Map<String, dynamic>? _etaResult;
+  String _errorMessage = '';
+
+  double get speedKmh => widget.speedInMps * 3.6;
+
+  Future<void> _fetchEtaFromBackend() async {
+    setState(() {
+      _isLoadingEta = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final url = 'https://smartbusstop.me/backend/api/eta?busId=ESP32_WROOM_DA_01&userLat=${widget.latitude}&userLng=${widget.longitude}';
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['status'] == 'Success') {
+          setState(() {
+            _etaResult = data['eta'];
+            _isLoadingEta = false;
+          });
+        } else {
+          setState(() {
+            _errorMessage = "Could not fetch arrival time.";
+            _isLoadingEta = false;
+          });
+        }
+      } else {
+        setState(() {
+          _errorMessage = "Server returned an error.";
+          _isLoadingEta = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Network error occurred. Check connection.";
+        _isLoadingEta = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4, 
+                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.directions_bus, color: primaryColor, size: 30),
+                ),
+                const SizedBox(width: 15),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Bus Route 177-A", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text("Current: Kaduwela Bus Stand", style: TextStyle(color: Colors.grey, fontSize: 14)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.person, color: Colors.white, size: 20),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Icon(Icons.speed, color: primaryColor, size: 24),
+                        const SizedBox(height: 5),
+                        const Text("Speed", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        Text("${speedKmh.toStringAsFixed(0)} km/h", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                  Container(width: 1, height: 40, color: Colors.grey.shade300),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Icon(Icons.location_on, color: Colors.blue, size: 24),
+                        const SizedBox(height: 5),
+                        const Text("Location", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        Text("${widget.latitude.toStringAsFixed(4)}, ${widget.longitude.toStringAsFixed(4)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(15)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Seating Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 15),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(children: [Text("52", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.grey)), Text("Total Seats", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                      Column(children: [Text("20", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red)), Text("Occupied", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                      Column(children: [Text("32", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)), Text("Available", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                    ]
+                  ),
+                  const SizedBox(height: 15),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: LinearProgressIndicator(value: 20/52, minHeight: 8, backgroundColor: Colors.grey.shade200, valueColor: const AlwaysStoppedAnimation(primaryColor)),
+                  ),
+                  const SizedBox(height: 10),
+                  const Row(children: [Icon(Icons.check_circle, color: Colors.green, size: 16), SizedBox(width: 5), Text("Comfortable", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))])
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            const Text("Passenger Movement", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.login, color: Colors.green),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text("5", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18)), 
+                            Text("Boarded", style: TextStyle(fontSize: 12, color: Colors.green))
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.logout, color: Colors.orange),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text("3", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 18)), 
+                            Text("Alighted", style: TextStyle(fontSize: 12, color: Colors.orange))
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 25),
+
+            const Text("Calculate Arrival Time", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 15),
+
+            if (_isLoadingEta)
+              const Center(child: CircularProgressIndicator(color: primaryColor))
+            else if (_etaResult != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: primaryColor.withOpacity(0.5)),
+                ),
+                child: Column(
+                  children: [
+                    Text("Predicted Arrival Time:", style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+                    const SizedBox(height: 5),
+                    Text("${_etaResult!['total_minutes']} Minutes", style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: primaryColor)),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Traffic: ${_etaResult!['google_traffic_minutes']}m", style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                        const SizedBox(width: 15),
+                        Text("Stops: ${_etaResult!['ai_predicted_stop_delay_minutes']}m", style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                      ],
+                    )
+                  ],
+                ),
+              )
+            else ...[
+              if (_errorMessage.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
+                ),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _fetchEtaFromBackend,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.schedule, color: Colors.white, size: 20),
+                      SizedBox(width: 10),
+                      Text("Calculate Time to Onboarding Location", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            
+            const SizedBox(height: 15),
+            
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton(
+                onPressed: () {},
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryColor, side: const BorderSide(color: primaryColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.map_outlined),
+                    SizedBox(width: 10),
+                    Text("View All Bus Stops on Map", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 15),
+
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () {},
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.bar_chart, color: Colors.white, size: 20),
+                    SizedBox(width: 10),
+                    Text("Predict Time to Destination", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
@@ -13,6 +14,7 @@ import '../screens/feedback_modal.dart';
 import '../screens/live_tracking_screen.dart';
 import '../services/location_service.dart';
 import 'package:location/location.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 void main() {
   runApp(const MyApp());
@@ -43,6 +45,72 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   static const LatLng _colomboLocation = LatLng(6.9271, 79.8612);
+  
+  // --- Live Tracking Variables ---
+  final Completer<GoogleMapController> _mapController = Completer();
+  IO.Socket? socket;
+  LatLng? liveBusLocation;
+  Map<String, dynamic>? busData;
+
+  @override
+  void initState() {
+    super.initState();
+    initSocketConnection();
+    _getCurrentLocation();
+    _loadUserName();
+    _enableHighAccuracyLocation();
+  }
+
+  void initSocketConnection() {
+    // ⚠️ CRITICAL: Replace with your laptop's IPv4 address!
+    // If using a physical phone: Use your Wi-Fi IP (e.g., 'http://192.168.8.118:5000')
+    // If using Android Studio Emulator: Use 'http://10.0.2.2:5000'
+    String serverUrl = 'http://192.168.8.118:5000'; 
+
+    socket = IO.io(serverUrl, IO.OptionBuilder()
+        .setTransports(['websocket'])
+        .disableAutoConnect()
+        .build()
+    );
+
+    socket!.connect();
+
+    socket!.onConnect((_) {
+      print('🟢 Connected to Node.js Live Tracking Server');
+    });
+
+    // Listen for the ESP32 data coming from Node.js
+    socket!.on('bus_location_update', (data) {
+      print('🚌 Live Bus Update Received: $data');
+      
+      if (mounted) {
+        setState(() {
+          liveBusLocation = LatLng(data['lat'], data['lng']);
+          busData = data;
+        });
+        
+        // Move the map camera to follow the bus automatically!
+        _moveCameraToBus(liveBusLocation!);
+      }
+    });
+
+    socket!.onDisconnect((_) {
+      print('🔴 Disconnected from Server');
+    });
+  }
+
+  Future<void> _moveCameraToBus(LatLng position) async {
+    final GoogleMapController controller = await _mapController.future;
+    controller.animateCamera(CameraUpdate.newLatLng(position));
+  }
+
+  @override
+  void dispose() {
+    socket?.disconnect();
+    _searchController.dispose();
+    _mapControllerBase?.dispose();
+    super.dispose();
+  }
 
   // Orange and white color palette matching onboarding
   static const Color primaryColor = Color(0xFFFF6B35); // Orange
@@ -52,21 +120,13 @@ class _HomePageState extends State<HomePage> {
   static const Color textSecondary = Color(0xFF6B7280);
 
   final TextEditingController _searchController = TextEditingController();
-  GoogleMapController? _mapController;
+  GoogleMapController? _mapControllerBase;
   LatLng? _currentPosition;
   bool _isLoadingLocation = true;
   final Set<Marker> _markers = {};
 
   String _userName = 'User';
   
-  @override
-  void initState() {
-    super.initState();
-    _getCurrentLocation();
-    _loadUserName();
-    _enableHighAccuracyLocation(); // Add this
-  }
-
   Future<void> _enableHighAccuracyLocation() async {
     await LocationService.enableHighAccuracy();
   }
@@ -79,13 +139,6 @@ class _HomePageState extends State<HomePage> {
         _userName = name.split(' ')[0]; // Get first name only
       });
     }
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _mapController?.dispose();
-    super.dispose();
   }
 
   Future<void> _getCurrentLocation() async {
@@ -109,7 +162,7 @@ class _HomePageState extends State<HomePage> {
           );
         });
 
-        _mapController?.animateCamera(
+        _mapControllerBase?.animateCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(
               target: _currentPosition!,
@@ -398,7 +451,7 @@ class _HomePageState extends State<HomePage> {
                                 zoomControlsEnabled: false,
                                 markers: _markers,
                                 onMapCreated: (GoogleMapController controller) {
-                                  _mapController = controller;
+                                  _mapControllerBase = controller;
                                   if (_currentPosition != null) {
                                     controller.animateCamera(
                                       CameraUpdate.newCameraPosition(
@@ -578,12 +631,9 @@ class RouteSearchModal extends StatefulWidget {
 class _RouteSearchModalState extends State<RouteSearchModal> {
   final TextEditingController _fromController = TextEditingController();
   final TextEditingController _toController = TextEditingController();
-  
   static const Color primaryColor = Color(0xFFFF6B35);
   static const Color textPrimary = Color(0xFF1F2937);
   static const Color textSecondary = Color(0xFF6B7280);
-
-  // Validation state
   bool _fromHasError = false;
   bool _toHasError = false;
   String _fromErrorMessage = '';
@@ -607,7 +657,6 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
 
   void _searchRoute() {
     _clearErrors();
-
     final from = _fromController.text.trim();
     final to = _toController.text.trim();
 
