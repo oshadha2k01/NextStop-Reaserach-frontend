@@ -1,13 +1,38 @@
 import 'bus_stop.dart';
 
 class BusRouteModel {
+  final String? id;
   final String routeName;
+  final String? routeNumber;
   final List<BusStop> stops;
 
   BusRouteModel({
+    this.id,
     required this.routeName,
+    this.routeNumber,
     required this.stops,
   });
+
+  factory BusRouteModel.fromJson(Map<String, dynamic> json) {
+    List<BusStop> stops = [];
+    if (json['stops'] != null) {
+      stops = (json['stops'] as List)
+          .map((s) => BusStop.fromJson(s as Map<String, dynamic>))
+          .toList();
+    }
+    return BusRouteModel(
+      id: json['_id']?.toString(),
+      routeName: json['routeName'] ?? json['name'] ?? '',
+      routeNumber: json['routeNumber']?.toString(),
+      stops: stops,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'routeName': routeName,
+    if (routeNumber != null) 'routeNumber': routeNumber,
+    'stops': stops.map((s) => s.toJson()).toList(),
+  };
 
   static List<BusRouteModel> getAllRoutes() {
     return [
@@ -15,18 +40,26 @@ class BusRouteModel {
       BusRouteModel(
         routeName: 'Route 177: Kaduwela - Kollupitiya',
         stops: [
-          BusStop(name: 'Kaduwela Bus Stand', latitude: 6.9442, longitude: 79.9866, keyLandmark: 'Start Terminal / Clock Tower'),
-          BusStop(name: 'Kothalawala', latitude: 6.9268, longitude: 79.9701, keyLandmark: 'SLIIT University Area'),
-          BusStop(name: 'Malabe Junction', latitude: 6.9045, longitude: 79.9548, keyLandmark: 'Malabe Clock Tower'),
-          BusStop(name: 'Thalangama', latitude: 6.9110, longitude: 79.9324, keyLandmark: 'Near ITI / Sludge Treatment'),
-          BusStop(name: 'Koswatta', latitude: 6.9071, longitude: 79.9214, keyLandmark: 'Thalangama Police Station'),
-          BusStop(name: 'Battaramulla', latitude: 6.8998, longitude: 79.9134, keyLandmark: 'Suhurupaya (Immigration Office)'),
-          BusStop(name: 'Rajagiriya', latitude: 6.9092, longitude: 79.8964, keyLandmark: 'Election Commission Office'),
-          BusStop(name: 'Ayurveda Junction', latitude: 6.9115, longitude: 79.8863, keyLandmark: 'Ayurveda Hospital'),
-          BusStop(name: 'Borella', latitude: 6.9142, longitude: 79.8778, keyLandmark: 'Senanayake Junction'),
-          BusStop(name: 'Horton Place', latitude: 6.9103, longitude: 79.8692, keyLandmark: 'Near Nelum Pokuna'),
-          BusStop(name: 'Liberty Plaza', latitude: 6.9124, longitude: 79.8516, keyLandmark: 'Liberty Junction'),
-          BusStop(name: 'Kollupitiya', latitude: 6.9114, longitude: 79.8488, keyLandmark: 'Station Road / End Terminal'),
+          BusStop(name: 'Kaduwela Bus Stand', latitude: 6.9351, longitude: 79.9841),
+          BusStop(name: 'Kothalawala', latitude: 6.9195, longitude: 79.9705),
+          BusStop(name: 'SLIIT Campus', latitude: 6.9147, longitude: 79.9729),
+          BusStop(name: 'Pittugala', latitude: 6.9201, longitude: 79.9662),
+          BusStop(name: 'Chandrika Kumaratunga Mw', latitude: 6.9146, longitude: 79.9733),
+          BusStop(name: 'Malabe Junction', latitude: 6.9036, longitude: 79.9547),
+          BusStop(name: 'Thalahena', latitude: 6.9015, longitude: 79.9402),
+          BusStop(name: 'Koswatta', latitude: 6.9042, longitude: 79.9323),
+          BusStop(name: 'Battaramulla Junction', latitude: 6.8995, longitude: 79.9229),
+          BusStop(name: 'Ethul Kotte', latitude: 6.9014, longitude: 79.9081),
+          BusStop(name: 'Diyatha Uyana / Waters Edge', latitude: 6.9008, longitude: 79.9105),
+          BusStop(name: 'Rajagiriya (Welikada)', latitude: 6.9091, longitude: 79.8961),
+          BusStop(name: 'Ayurveda Junction', latitude: 6.9118, longitude: 79.8885),
+          BusStop(name: 'Castle Street (Hospital)', latitude: 6.9135, longitude: 79.8821),
+          BusStop(name: 'Devi Balika Junction', latitude: 6.9142, longitude: 79.8800),
+          BusStop(name: 'Borella (Senanayake Junction)', latitude: 6.9158, longitude: 79.8766),
+          BusStop(name: 'St. Bridgets', latitude: 6.9196, longitude: 79.8641),
+          BusStop(name: 'Horton Place (Wijerama Mw)', latitude: 6.9125, longitude: 79.8685),
+          BusStop(name: 'Liberty Junction', latitude: 6.9094, longitude: 79.8530),
+          BusStop(name: 'Kollupitiya (Station Road)', latitude: 6.9082, longitude: 79.8504),
         ],
       ),
 

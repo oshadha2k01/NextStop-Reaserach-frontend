@@ -87,11 +87,10 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   }
 
   void _verifyOTP() async {
-    // Dismiss keyboard
     FocusScope.of(context).unfocus();
-    
+
     String otp = _controllers.map((c) => c.text).join();
-    
+
     if (otp.length != 6) {
       setState(() {
         _errorMessage = 'Please enter all 6 digits';
@@ -103,24 +102,21 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       _isLoading = true;
     });
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
+    // TODO: Add server verification when backend is ready
+    await Future.delayed(const Duration(milliseconds: 500));
 
     setState(() {
       _isLoading = false;
     });
 
-    // TODO: Implement actual OTP verification
-    // For now, navigate to home
     if (mounted) {
       Navigator.of(context).pushReplacementNamed('/home');
     }
   }
 
-  void _resendOTP() {
+  void _resendOTP() async {
     if (!_canResend) return;
 
-    // Clear all fields
     for (var controller in _controllers) {
       controller.clear();
     }
@@ -128,13 +124,15 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
     _startCountdown();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Verification code sent successfully!'),
-        backgroundColor: Color(0xFFFF6B35),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Verification code sent successfully!'),
+          backgroundColor: Color(0xFFFF6B35),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   // Update display to show minutes and seconds

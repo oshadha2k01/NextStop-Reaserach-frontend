@@ -65,13 +65,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       });
 
       await _saveToLocalStorage();
-      await Future.delayed(const Duration(seconds: 1));
 
       setState(() {
         _isLoading = false;
       });
 
-      // Navigate to email verification for passengers
       if (mounted) {
         Navigator.of(context).pushReplacementNamed(
           '/email-verification',

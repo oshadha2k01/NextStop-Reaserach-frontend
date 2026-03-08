@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/bus_route_model.dart';
+import '../services/route_service.dart';
 
 class AllRoutesScreen extends StatefulWidget {
-  const AllRoutesScreen({Key? key}) : super(key: key);
+  const AllRoutesScreen({super.key});
 
   @override
   State<AllRoutesScreen> createState() => _AllRoutesScreenState();
@@ -35,9 +36,19 @@ class _AllRoutesScreenState extends State<AllRoutesScreen> {
   @override
   void initState() {
     super.initState();
-    _allRoutes = BusRouteModel.getAllRoutes();
-    _filteredRoutes = _allRoutes;
-    _showAllRoutes();
+    _loadRoutes();
+  }
+
+  Future<void> _loadRoutes() async {
+    final routeService = RouteService();
+    final routes = await routeService.getAllRoutes();
+    if (mounted) {
+      setState(() {
+        _allRoutes = routes;
+        _filteredRoutes = routes;
+      });
+      _showAllRoutes();
+    }
   }
 
   @override
@@ -317,7 +328,7 @@ class _AllRoutesScreenState extends State<AllRoutesScreen> {
                             value: province,
                             child: Text(province),
                           );
-                        }).toList(),
+                        }),
                       ],
                       onChanged: _onProvinceChanged,
                     ),
@@ -352,7 +363,7 @@ class _AllRoutesScreenState extends State<AllRoutesScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           );
-                        }).toList(),
+                        }),
                       ],
                       onChanged: _onRouteChanged,
                     ),

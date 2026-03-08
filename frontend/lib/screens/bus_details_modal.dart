@@ -13,15 +13,17 @@ class BusDetailsModal extends StatefulWidget {
   final String busId;
   final String currentLocation;
   final List<BusStop> remainingStops;
+  final List<BusStop> allRouteStops;
   final int currentStopIndex;
 
   const BusDetailsModal({
-    Key? key,
+    super.key,
     required this.busId,
     required this.currentLocation,
     required this.remainingStops,
+    required this.allRouteStops,
     required this.currentStopIndex,
-  }) : super(key: key);
+  });
 
   @override
   State<BusDetailsModal> createState() => _BusDetailsModalState();
@@ -622,7 +624,7 @@ class _BusDetailsModalState extends State<BusDetailsModal> {
                           backgroundColor: Colors.transparent,
                           builder: (context) => PredictionModal(
                             busId: widget.busId,
-                            allStops: widget.remainingStops,
+                            allStops: widget.allRouteStops,
                             currentLocation: widget.currentLocation,
                           ),
                         );

@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bus_route_model.dart';
+import '../services/route_service.dart';
 import '../screens/route_map_screen.dart';
 import '../screens/real_time_bus.dart';
 import '../screens/crowd_prediction_modal.dart';
@@ -54,7 +55,7 @@ class _HomePageState extends State<HomePage> {
   GoogleMapController? _mapController;
   LatLng? _currentPosition;
   bool _isLoadingLocation = true;
-  Set<Marker> _markers = {};
+  final Set<Marker> _markers = {};
 
   String _userName = 'User';
   
@@ -568,7 +569,7 @@ class _HomePageState extends State<HomePage> {
 
 // New Route Search Modal Widget
 class RouteSearchModal extends StatefulWidget {
-  const RouteSearchModal({Key? key}) : super(key: key);
+  const RouteSearchModal({super.key});
 
   @override
   State<RouteSearchModal> createState() => _RouteSearchModalState();
