@@ -13,6 +13,7 @@ import '../screens/feedback_modal.dart';
 import '../screens/live_tracking_screen.dart';
 import '../services/location_service.dart';
 import 'package:location/location.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 void main() {
   runApp(const MyApp());
@@ -54,6 +55,9 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     initSocketConnection();
+    _getCurrentLocation();
+    _loadUserName();
+    _enableHighAccuracyLocation();
   }
 
   void initSocketConnection() {
@@ -102,6 +106,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     socket?.disconnect();
+    _searchController.dispose();
+    _mapControllerBase?.dispose();
     super.dispose();
   }
 
@@ -113,21 +119,13 @@ class _HomePageState extends State<HomePage> {
   static const Color textSecondary = Color(0xFF6B7280);
 
   final TextEditingController _searchController = TextEditingController();
-  GoogleMapController? _mapController;
+  GoogleMapController? _mapControllerBase;
   LatLng? _currentPosition;
   bool _isLoadingLocation = true;
   Set<Marker> _markers = {};
 
   String _userName = 'User';
   
-  @override
-  void initState() {
-    super.initState();
-    _getCurrentLocation();
-    _loadUserName();
-    _enableHighAccuracyLocation(); // Add this
-  }
-
   Future<void> _enableHighAccuracyLocation() async {
     await LocationService.enableHighAccuracy();
   }
@@ -140,13 +138,6 @@ class _HomePageState extends State<HomePage> {
         _userName = name.split(' ')[0]; // Get first name only
       });
     }
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _mapController?.dispose();
-    super.dispose();
   }
 
   Future<void> _getCurrentLocation() async {
@@ -170,7 +161,7 @@ class _HomePageState extends State<HomePage> {
           );
         });
 
-        _mapController?.animateCamera(
+        _mapControllerBase?.animateCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(
               target: _currentPosition!,
@@ -210,16 +201,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildMenuSquare(IconData icon, String label) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.shade300,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: Colors.grey.shade700, size: 30),
   void _showLocationServiceDialog() {
     showDialog(
       context: context,
@@ -469,7 +450,7 @@ class _HomePageState extends State<HomePage> {
                                 zoomControlsEnabled: false,
                                 markers: _markers,
                                 onMapCreated: (GoogleMapController controller) {
-                                  _mapController = controller;
+                                  _mapControllerBase = controller;
                                   if (_currentPosition != null) {
                                     controller.animateCamera(
                                       CameraUpdate.newCameraPosition(
@@ -640,7 +621,7 @@ class _HomePageState extends State<HomePage> {
 
 // New Route Search Modal Widget
 class RouteSearchModal extends StatefulWidget {
-  const RouteSearchModal({Key? key}) : super(key: key);
+  const RouteSearchModal({super.key});
 
   @override
   State<RouteSearchModal> createState() => _RouteSearchModalState();
@@ -649,12 +630,9 @@ class RouteSearchModal extends StatefulWidget {
 class _RouteSearchModalState extends State<RouteSearchModal> {
   final TextEditingController _fromController = TextEditingController();
   final TextEditingController _toController = TextEditingController();
-  
   static const Color primaryColor = Color(0xFFFF6B35);
   static const Color textPrimary = Color(0xFF1F2937);
   static const Color textSecondary = Color(0xFF6B7280);
-
-  // Validation state
   bool _fromHasError = false;
   bool _toHasError = false;
   String _fromErrorMessage = '';
@@ -678,7 +656,6 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
 
   void _searchRoute() {
     _clearErrors();
-
     final from = _fromController.text.trim();
     final to = _toController.text.trim();
 

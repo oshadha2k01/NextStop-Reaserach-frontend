@@ -3,6 +3,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 import '../models/bus_route_model.dart';
 import 'bus_details_modal.dart';
 
@@ -26,9 +29,9 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
   
-  // Hardcoded IoT bus data - 2 buses per route
-  Map<String, List<BusData>> _busData = {};
-  Timer? _animationTimer;
+  // LIVE GPS TRACKING VARIABLES
+  Position? _currentDevicePosition;
+  StreamSubscription<Position>? _positionStream;
   BitmapDescriptor? _busIcon;
 
   @override
@@ -38,19 +41,53 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     _allRoutes = BusRouteModel.getAllRoutes();
     if (_allRoutes.isNotEmpty) {
       _selectedRoute = _allRoutes[0];
-      _initializeBusData();
       _updateMapForRoute();
-      _startBusAnimation();
     }
+    // Start tracking the phone instead of a fake animation!
+    _startTrackingDeviceAsBus();
   }
 
   @override
   void dispose() {
-    _animationTimer?.cancel();
+    _positionStream?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
 
+  // Gets device location and speed, and treats it as the "Bus"
+  Future<void> _startTrackingDeviceAsBus() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+
+    // Get initial position
+    Position initialPosition = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    if (mounted) {
+      _updateDeviceBusMarker(initialPosition);
+      // Center the camera on the user's first location
+      _mapController?.animateCamera(CameraUpdate.newLatLngZoom(
+        LatLng(initialPosition.latitude, initialPosition.longitude), 15));
+    }
+
+    // Listen to location changes continuously
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5, // Update every 5 meters
+      ),
+    ).listen((Position position) {
+      if (mounted) {
+        _updateDeviceBusMarker(position);
+      }
+    });
+  }
+
+  // Your beautiful custom bus drawing!
   Future<void> _createBusIcon() async {
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
@@ -97,76 +134,13 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     final uint8List = byteData!.buffer.asUint8List();
     
     _busIcon = BitmapDescriptor.fromBytes(uint8List);
-    setState(() {});
-  }
-
-  void _initializeBusData() {
-    _busData.clear();
     
-    for (var route in _allRoutes) {
-      if (route.stops.length >= 2) {
-        _busData[route.routeName] = [
-          // Bus 1 - starts at first stop
-          BusData(
-            busId: '${route.routeName.split(':')[0].trim()}-A',
-            currentStopIndex: 0,
-            progress: 0.0,
-            position: LatLng(route.stops[0].latitude, route.stops[0].longitude),
-          ),
-          // Bus 2 - starts at middle stop
-          BusData(
-            busId: '${route.routeName.split(':')[0].trim()}-B',
-            currentStopIndex: route.stops.length ~/ 2,
-            progress: 0.0,
-            position: LatLng(
-              route.stops[route.stops.length ~/ 2].latitude,
-              route.stops[route.stops.length ~/ 2].longitude,
-            ),
-          ),
-        ];
-      }
+    // If we already have the location, update the marker now that the icon is ready
+    if (_currentDevicePosition != null) {
+      _updateDeviceBusMarker(_currentDevicePosition!);
+    } else {
+      setState(() {});
     }
-  }
-
-  void _startBusAnimation() {
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
-      if (_selectedRoute == null) return;
-      
-      setState(() {
-        final buses = _busData[_selectedRoute!.routeName];
-        if (buses == null) return;
-
-        for (var bus in buses) {
-          // Move bus along route - slower speed
-          bus.progress += 0.008;
-
-          if (bus.progress >= 1.0) {
-            // Move to next stop
-            bus.progress = 0.0;
-            bus.currentStopIndex++;
-            
-            if (bus.currentStopIndex >= _selectedRoute!.stops.length - 1) {
-              // Reached end, restart from beginning
-              bus.currentStopIndex = 0;
-            }
-          }
-
-          // Calculate interpolated position with exact coordinates
-          final currentStop = _selectedRoute!.stops[bus.currentStopIndex];
-          final nextStop = _selectedRoute!.stops[bus.currentStopIndex + 1];
-          
-          // Use precise calculation for accurate positioning
-          final lat = currentStop.latitude + 
-                     (nextStop.latitude - currentStop.latitude) * bus.progress;
-          final lng = currentStop.longitude + 
-                     (nextStop.longitude - currentStop.longitude) * bus.progress;
-          
-          bus.position = LatLng(lat, lng);
-        }
-        
-        _updateBusMarkers();
-      });
-    });
   }
 
   void _updateMapForRoute() {
@@ -211,7 +185,10 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       ),
     );
 
-    _updateBusMarkers();
+    // Re-add the bus marker if we have the location
+    if (_currentDevicePosition != null) {
+      _updateDeviceBusMarker(_currentDevicePosition!);
+    }
 
     // Move camera to show entire route
     if (_mapController != null && _selectedRoute!.stops.isNotEmpty) {
@@ -219,54 +196,38 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     }
   }
 
-  void _updateBusMarkers() {
-    if (_selectedRoute == null || _busIcon == null) return;
+  void _updateDeviceBusMarker(Position position) {
+    _currentDevicePosition = position;
+    
+    setState(() {
+      // Remove the old bus position
+      _markers.removeWhere((marker) => marker.markerId.value == 'device_live_bus');
 
-    // Remove old bus markers
-    _markers.removeWhere((marker) => marker.markerId.value.contains('bus_'));
-
-    // Add current bus markers with custom bus icon
-    final buses = _busData[_selectedRoute!.routeName];
-    if (buses != null) {
-      for (int i = 0; i < buses.length; i++) {
-        final bus = buses[i];
+      if (_busIcon != null) {
         _markers.add(
           Marker(
-            markerId: MarkerId('bus_${bus.busId}'),
-            position: bus.position,
+            markerId: const MarkerId('device_live_bus'),
+            position: LatLng(position.latitude, position.longitude),
             icon: _busIcon!,
-            infoWindow: InfoWindow(
-              title: '🚌 Bus ${bus.busId}',
-              snippet: 'Next: ${_selectedRoute!.stops[bus.currentStopIndex + 1].name}',
-            ),
             anchor: const Offset(0.5, 0.5),
-            flat: true,
             zIndex: 10,
             onTap: () {
-              _showBusDetails(bus);
+              // OPEN THE SPECIFIC POPUP UI YOU REQUESTED
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (context) => DeviceBusLiveDetailsModal(
+                  latitude: position.latitude,
+                  longitude: position.longitude,
+                  speedInMps: position.speed,
+                ),
+              );
             },
           ),
         );
       }
-    }
-  }
-
-  void _showBusDetails(BusData bus) {
-    // Get remaining stops from current position
-    final remainingStops = _selectedRoute!.stops.sublist(bus.currentStopIndex + 1);
-    final currentStop = _selectedRoute!.stops[bus.currentStopIndex];
-    
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => BusDetailsModal(
-        busId: bus.busId,
-        currentLocation: currentStop.name,
-        remainingStops: remainingStops,
-        currentStopIndex: bus.currentStopIndex,
-      ),
-    );
+    });
   }
 
   void _fitMapToRoute() {
@@ -491,7 +452,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 13,
               color: textPrimary,
               fontWeight: FontWeight.w600,
@@ -503,17 +464,346 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
   }
 }
 
-// Bus data model for IoT simulation
-class BusData {
-  final String busId;
-  int currentStopIndex;
-  double progress; // 0.0 to 1.0 between stops
-  LatLng position;
+// ======================================================================
+// NEW: LIVE DEVICE-AS-BUS DETAILS MODAL (API-DRIVEN, NO TEXT BOX)
+// Matches your 3rd and 4th picture design perfectly!
+// ======================================================================
+class DeviceBusLiveDetailsModal extends StatefulWidget {
+  final double latitude;
+  final double longitude;
+  final double speedInMps;
 
-  BusData({
-    required this.busId,
-    required this.currentStopIndex,
-    required this.progress,
-    required this.position,
+  const DeviceBusLiveDetailsModal({
+    super.key,
+    required this.latitude,
+    required this.longitude,
+    required this.speedInMps,
   });
+
+  @override
+  State<DeviceBusLiveDetailsModal> createState() => _DeviceBusLiveDetailsModalState();
+}
+
+class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
+  static const Color primaryColor = Color(0xFFFF6B35);
+  
+  bool _isLoadingEta = false;
+  Map<String, dynamic>? _etaResult;
+  String _errorMessage = '';
+
+  // Geolocator gives speed in m/s, convert to km/h for the UI
+  double get speedKmh => widget.speedInMps * 3.6;
+
+  Future<void> _fetchEtaFromBackend() async {
+    setState(() {
+      _isLoadingEta = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final url = 'https://smartbusstop.me/backend/api/eta?busId=ESP32_WROOM_DA_01&userLat=${widget.latitude}&userLng=${widget.longitude}';
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['status'] == 'Success') {
+          setState(() {
+            _etaResult = data['eta'];
+            _isLoadingEta = false;
+          });
+        } else {
+          setState(() {
+            _errorMessage = "Could not fetch arrival time.";
+            _isLoadingEta = false;
+          });
+        }
+      } else {
+        setState(() {
+          _errorMessage = "Server returned an error.";
+          _isLoadingEta = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Network error occurred. Check connection.";
+        _isLoadingEta = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40, height: 4, 
+                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Header Section
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.directions_bus, color: primaryColor, size: 30),
+                ),
+                const SizedBox(width: 15),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Bus Route 177-A", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text("Current: Kaduwela Bus Stand", style: TextStyle(color: Colors.grey, fontSize: 14)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.person, color: Colors.white, size: 20),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Speed and Location Box
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Icon(Icons.speed, color: primaryColor, size: 24),
+                        const SizedBox(height: 5),
+                        const Text("Speed", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        Text("${speedKmh.toStringAsFixed(0)} km/h", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                  Container(width: 1, height: 40, color: Colors.grey.shade300),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Icon(Icons.location_on, color: Colors.blue, size: 24),
+                        const SizedBox(height: 5),
+                        const Text("Location", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        Text("${widget.latitude.toStringAsFixed(4)}, ${widget.longitude.toStringAsFixed(4)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Seating Information
+            Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(15)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Seating Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 15),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(children: [Text("52", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.grey)), Text("Total Seats", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                      Column(children: [Text("20", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red)), Text("Occupied", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                      Column(children: [Text("32", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)), Text("Available", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                    ]
+                  ),
+                  const SizedBox(height: 15),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: LinearProgressIndicator(value: 20/52, minHeight: 8, backgroundColor: Colors.grey.shade200, valueColor: const AlwaysStoppedAnimation(primaryColor)),
+                  ),
+                  const SizedBox(height: 10),
+                  const Row(children: [Icon(Icons.check_circle, color: Colors.green, size: 16), SizedBox(width: 5), Text("Comfortable", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))])
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Passenger Movement
+            const Text("Passenger Movement", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.login, color: Colors.green),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text("5", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18)), 
+                            Text("Boarded", style: TextStyle(fontSize: 12, color: Colors.green))
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.logout, color: Colors.orange),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text("3", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 18)), 
+                            Text("Alighted", style: TextStyle(fontSize: 12, color: Colors.orange))
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 25),
+
+            // Calculate Arrival Time Title
+            const Text("Calculate Arrival Time", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 15),
+
+            // DYNAMIC API DATA: Show Loading, Error, Prediction, OR the action Button
+            if (_isLoadingEta)
+              const Center(child: CircularProgressIndicator(color: primaryColor))
+            else if (_etaResult != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: primaryColor.withOpacity(0.5)),
+                ),
+                child: Column(
+                  children: [
+                    Text("Predicted Arrival Time:", style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+                    const SizedBox(height: 5),
+                    Text("${_etaResult!['total_minutes']} Minutes", style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: primaryColor)),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Traffic: ${_etaResult!['google_traffic_minutes']}m", style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                        const SizedBox(width: 15),
+                        Text("Stops: ${_etaResult!['ai_predicted_stop_delay_minutes']}m", style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                      ],
+                    )
+                  ],
+                ),
+              )
+            else ...[
+              if (_errorMessage.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
+                ),
+              // NO TEXT FIELD HERE! Just the button.
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _fetchEtaFromBackend,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.schedule, color: Colors.white, size: 20),
+                      SizedBox(width: 10),
+                      Text("Calculate Time to Onboarding Location", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            
+            const SizedBox(height: 15),
+            
+            // View All Bus Stops Button (From your 4th picture)
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton(
+                onPressed: () {}, // Add logic here later if needed
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryColor, side: const BorderSide(color: primaryColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.map_outlined),
+                    SizedBox(width: 10),
+                    Text("View All Bus Stops on Map", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 15),
+
+            // Predict Time to Destination Button (From your 4th picture)
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () {}, // Add logic here later if needed
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.bar_chart, color: Colors.white, size: 20),
+                    SizedBox(width: 10),
+                    Text("Predict Time to Destination", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
 }
