@@ -3,9 +3,11 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
+import '../services/socket_service.dart';
 
 class DriverHomeScreen extends StatefulWidget {
-  const DriverHomeScreen({Key? key}) : super(key: key);
+  const DriverHomeScreen({super.key});
 
   @override
   State<DriverHomeScreen> createState() => _DriverHomeScreenState();
@@ -85,14 +87,58 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     _loadDriverInfo();
     _createBusIcon();
     _updateMarkersAndPolylines();
-    _startBusMovement();
-    _startNotificationSimulation();
+    _connectSocket();
+  }
+
+  Future<void> _connectSocket() async {
+    final socketService = SocketService();
+    await socketService.connect();
+
+    // Emit driver's real GPS location periodically
+    _movementTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      try {
+        final position = await Geolocator.getCurrentPosition();
+        setState(() {
+          _busLocation = LatLng(position.latitude, position.longitude);
+          _busSpeed = position.speed * 3.6; // m/s to km/h
+        });
+
+        socketService.emit('driver-location-update', {
+          'busNumber': _busNumber,
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'speed': _busSpeed,
+          'routeName': _routeName,
+        });
+
+        _updateMarkersAndPolylines();
+        _animateCamera();
+      } catch (e) {
+        // Fallback to simulated movement if GPS fails
+        _simulateBusMovement();
+      }
+    });
+
+    // Listen for passenger boarding notifications
+    socketService.on('passenger-boarding-request', (data) {
+      if (data != null && mounted) {
+        _addNotification(
+          data['title'] ?? 'New Passenger Request',
+          data['message'] ?? 'Passenger waiting',
+          LatLng(
+            (data['latitude'] ?? 0).toDouble(),
+            (data['longitude'] ?? 0).toDouble(),
+          ),
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
     _movementTimer?.cancel();
     _notificationTimer?.cancel();
+    SocketService().off('passenger-boarding-request');
     _mapController?.dispose();
     super.dispose();
   }

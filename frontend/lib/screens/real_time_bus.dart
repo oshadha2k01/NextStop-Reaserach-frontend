@@ -7,9 +7,25 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import '../models/bus_route_model.dart';
+import '../services/socket_service.dart';
+
+// --- ADDED MISSING BUS DATA CLASS ---
+class BusData {
+  final String busId;
+  int currentStopIndex;
+  double progress;
+  LatLng position;
+
+  BusData({
+    required this.busId,
+    required this.currentStopIndex,
+    required this.progress,
+    required this.position,
+  });
+}
 
 class RealTimeBusScreen extends StatefulWidget {
-  const RealTimeBusScreen({Key? key}) : super(key: key);
+  const RealTimeBusScreen({super.key});
 
   @override
   State<RealTimeBusScreen> createState() => _RealTimeBusScreenState();
@@ -25,8 +41,10 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
   GoogleMapController? _mapController;
   BusRouteModel? _selectedRoute;
   List<BusRouteModel> _allRoutes = [];
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
+  
+  Map<String, List<BusData>> _busData = {};
   
   // LIVE GPS TRACKING VARIABLES
   Position? _currentDevicePosition;
@@ -41,6 +59,8 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     if (_allRoutes.isNotEmpty) {
       _selectedRoute = _allRoutes[0];
       _updateMapForRoute();
+      // CONNECT TO BACKEND SOCKET
+      _connectBusSocket();
     }
     // Start tracking the phone
     _startTrackingDeviceAsBus();
@@ -51,6 +71,33 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     _positionStream?.cancel();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _connectBusSocket() async {
+    final socketService = SocketService();
+    await socketService.connect();
+
+    socketService.on('bus-location-update', (data) {
+      if (data == null || !mounted || _selectedRoute == null) return;
+
+      final busId = data['busNumber'] ?? data['busId'] ?? '';
+      final lat = (data['latitude'] ?? 0).toDouble();
+      final lng = (data['longitude'] ?? 0).toDouble();
+
+      final buses = _busData[_selectedRoute!.routeName];
+      if (buses != null) {
+        final busIndex = buses.indexWhere((b) => b.busId == busId);
+        if (busIndex >= 0) {
+          setState(() {
+            buses[busIndex].position = LatLng(lat, lng);
+            // REPLACED BROKEN CALL WITH THE CORRECT RENDER METHOD
+            if (_currentDevicePosition != null) {
+              _updateDeviceAndBusMarkers(_currentDevicePosition!);
+            }
+          });
+        }
+      }
+    });
   }
 
   // Gets device location and speed
@@ -217,7 +264,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
         _markers.add(
           Marker(
             markerId: const MarkerId('device_live_bus'),
-            position: LatLng(position.latitude, position.longitude),
+            position: LatLng(position.latitude + 0.0005, position.longitude + 0.0005), 
             icon: _busIcon!,
             anchor: const Offset(0.5, 0.5),
             zIndex: 10, // Keep it on top of the user pin
@@ -401,7 +448,6 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
                   ),
                   markers: _markers,
                   polylines: _polylines,
-                  // NATIVE LOCATION DOT IS NOW ENABLED HERE:
                   myLocationEnabled: true,
                   myLocationButtonEnabled: true,
                   zoomControlsEnabled: false,
@@ -502,7 +548,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
   Map<String, dynamic>? _etaResult;
   String _errorMessage = '';
 
-  // Convert m/s to km/h
   double get speedKmh => widget.speedInMps * 3.6;
 
   Future<void> _fetchEtaFromBackend() async {
@@ -555,7 +600,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Drag handle
             Center(
               child: Container(
                 width: 40, height: 4, 
@@ -564,7 +608,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             ),
             const SizedBox(height: 20),
 
-            // Header Section
             Row(
               children: [
                 Container(
@@ -591,7 +634,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             ),
             const SizedBox(height: 20),
 
-            // Speed and Location Box
             Container(
               padding: const EdgeInsets.symmetric(vertical: 15),
               decoration: BoxDecoration(
@@ -626,7 +668,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             ),
             const SizedBox(height: 20),
 
-            // Seating Information
             Container(
               padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(15)),
@@ -655,7 +696,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             ),
             const SizedBox(height: 20),
 
-            // Passenger Movement
             const Text("Passenger Movement", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 10),
             Row(
@@ -703,11 +743,9 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             ),
             const SizedBox(height: 25),
 
-            // Calculate Arrival Time Title
             const Text("Calculate Arrival Time", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 15),
 
-            // Show ETA or Button
             if (_isLoadingEta)
               const Center(child: CircularProgressIndicator(color: primaryColor))
             else if (_etaResult != null)
@@ -766,7 +804,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             
             const SizedBox(height: 15),
             
-            // View All Bus Stops
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -789,7 +826,6 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             
             const SizedBox(height: 15),
 
-            // Predict Time to Destination
             SizedBox(
               width: double.infinity,
               height: 50,

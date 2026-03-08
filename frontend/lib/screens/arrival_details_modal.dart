@@ -12,7 +12,7 @@ class ArrivalDetailsModal extends StatelessWidget {
   final double destinationLongitude;
 
   const ArrivalDetailsModal({
-    Key? key,
+    super.key,
     required this.busId,
     required this.currentLocation,
     required this.destinationLocation,
@@ -22,7 +22,7 @@ class ArrivalDetailsModal extends StatelessWidget {
     required this.stopsAway,
     required this.destinationLatitude,
     required this.destinationLongitude,
-  }) : super(key: key);
+  });
 
   static const Color primaryColor = Color(0xFFFF6B35);
   static const Color textPrimary = Color(0xFF1F2937);

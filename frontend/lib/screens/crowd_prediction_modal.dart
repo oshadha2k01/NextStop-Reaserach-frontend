@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
 import '../models/bus_route_model.dart';
+import '../services/prediction_service.dart';
 
 class CrowdPredictionModal extends StatefulWidget {
-  const CrowdPredictionModal({Key? key}) : super(key: key);
+  const CrowdPredictionModal({super.key});
 
   @override
   State<CrowdPredictionModal> createState() => _CrowdPredictionModalState();
@@ -20,8 +21,8 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
   final TextEditingController _timeController = TextEditingController();
 
   GoogleMapController? _mapController;
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   
   DateTime? _selectedDate;
   BusRouteModel? _matchedRoute;
@@ -218,104 +219,55 @@ class _CrowdPredictionModalState extends State<CrowdPredictionModal> {
       _showPrediction = false;
     });
 
-    // Simulate ML API call
-    await Future.delayed(const Duration(seconds: 3));
-
-    // Demo prediction logic based on selected date and time
-    final selectedDay = _selectedDate!;
-    final isWeekend = selectedDay.weekday == DateTime.saturday || selectedDay.weekday == DateTime.sunday;
-    
-    // Parse the selected time
-    final timeParts = _timeController.text.split(':');
-    int selectedHour = 0;
-    int selectedMinute = 0;
-    
-    if (timeParts.length >= 2) {
-      // Handle AM/PM format
-      if (_timeController.text.contains('AM') || _timeController.text.contains('PM')) {
-        final isPM = _timeController.text.contains('PM');
-        selectedHour = int.parse(timeParts[0].trim());
-        selectedMinute = int.parse(timeParts[1].split(' ')[0].trim());
-        
-        if (isPM && selectedHour != 12) {
-          selectedHour += 12;
-        } else if (!isPM && selectedHour == 12) {
-          selectedHour = 0;
-        }
-      } else {
-        selectedHour = int.parse(timeParts[0].trim());
-        selectedMinute = int.parse(timeParts[1].trim());
-      }
-    }
-
-    int crowdLevel;
-    String crowdStatus;
-    String recommendation;
-    Color statusColor;
-
-    if (isWeekend) {
-      // WEEKENDS: Always Normal/Comfortable
-      crowdLevel = 25 + (selectedHour % 15);
-      crowdStatus = 'Comfortable';
-      recommendation = 'Perfect time to travel! Weekend buses are less crowded. Enjoy a comfortable journey with available seats.';
-      statusColor = Colors.green;
-    } else {
-      // WEEKDAYS: Check for peak hours
-      
-      // Morning Peak: 6:00 AM - 7:00 AM (6:30 AM peak)
-      if (selectedHour == 6 && selectedMinute >= 0 || selectedHour == 7 && selectedMinute == 0) {
-        crowdLevel = 85 + (selectedMinute ~/ 10);
-        crowdStatus = 'Over Crowded';
-        recommendation = 'MORNING PEAK HOUR! Not recommended for this time. Bus is heavily over capacity during office commute hours (6:00-7:00 AM). Please choose an earlier or later time.';
-        statusColor = Colors.red;
-      }
-      // Evening Peak: 4:30 PM - 6:00 PM
-      else if ((selectedHour == 16 && selectedMinute >= 30) || 
-               (selectedHour == 17) || 
-               (selectedHour == 18 && selectedMinute == 0)) {
-        crowdLevel = 80 + ((selectedHour - 16) * 5);
-        crowdStatus = 'Over Crowded';
-        recommendation = 'EVENING PEAK HOUR! Not recommended for this time. Bus is over capacity during evening rush hours (4:30-6:00 PM). Consider traveling after 6:30 PM or before 4:00 PM.';
-        statusColor = Colors.red;
-      }
-      // Normal/Off-peak hours on weekdays
-      else if (selectedHour >= 9 && selectedHour <= 15) {
-        // Mid-day comfortable hours
-        crowdLevel = 30 + (selectedHour % 10);
-        crowdStatus = 'Comfortable';
-        recommendation = 'Good time to travel! Weekday mid-day buses have available seats. Comfortable journey expected during off-peak hours.';
-        statusColor = Colors.green;
-      }
-      else if (selectedHour >= 19 || selectedHour <= 5) {
-        // Early morning or late evening
-        crowdLevel = 20 + (selectedHour % 15);
-        crowdStatus = 'Comfortable';
-        recommendation = 'Excellent time to travel! Very few passengers during these hours. Guaranteed comfortable journey with plenty of seats available.';
-        statusColor = Colors.green;
-      }
-      else {
-        // Moderate hours (7:00-9:00 AM and 6:00-7:00 PM)
-        crowdLevel = 55 + (selectedHour % 15);
-        crowdStatus = 'Moderate';
-        recommendation = 'Moderate crowd expected on this weekday. You may find seats available but bus could be busy. Consider this time slot or adjust your schedule slightly.';
-        statusColor = Colors.orange;
-      }
-    }
+    final predictionService = PredictionService();
+    final response = await predictionService.predictCrowd(
+      routeName: _matchedRoute!.routeName,
+      date: _selectedDate!.toIso8601String().split('T')[0],
+      time: _timeController.text,
+      fromStop: _fromController.text.trim(),
+      toStop: _toController.text.trim(),
+    );
 
     setState(() {
       _isPredicting = false;
-      _showPrediction = true;
-      _predictionResult = {
-        'crowd_level': crowdStatus.toLowerCase().replaceAll(' ', '_'),
-        'date': _selectedDate!.toIso8601String().split('T')[0],
-        'day_of_week': _getDayOfWeek(_selectedDate!.weekday),
-        'predicted_crowd': crowdLevel,
-        'recommendation': recommendation,
-        'status': crowdStatus,
-        'time': _timeController.text,
-        'statusColor': statusColor,
-      };
     });
+
+    if (response.success && response.data != null) {
+      final data = response.data!;
+
+      Color statusColor;
+      final status = (data['status'] ?? data['crowd_level'] ?? 'moderate').toString().toLowerCase();
+      if (status.contains('over') || status.contains('high') || status.contains('crowded')) {
+        statusColor = Colors.red;
+      } else if (status.contains('moderate') || status.contains('medium')) {
+        statusColor = Colors.orange;
+      } else {
+        statusColor = Colors.green;
+      }
+
+      setState(() {
+        _showPrediction = true;
+        _predictionResult = {
+          'crowd_level': data['crowd_level'] ?? status,
+          'date': data['date'] ?? _selectedDate!.toIso8601String().split('T')[0],
+          'day_of_week': data['day_of_week'] ?? _getDayOfWeek(_selectedDate!.weekday),
+          'predicted_crowd': data['predicted_crowd'] ?? 50,
+          'recommendation': data['recommendation'] ?? 'No recommendation available.',
+          'status': data['status'] ?? 'Moderate',
+          'time': data['time'] ?? _timeController.text,
+          'statusColor': statusColor,
+        };
+      });
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response.errorMessage ?? 'Prediction failed. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   String _getDayOfWeek(int weekday) {

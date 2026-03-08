@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/bus_route_model.dart';
 
 class FeedbackModal extends StatefulWidget {
-  const FeedbackModal({Key? key}) : super(key: key);
+  const FeedbackModal({super.key});
 
   @override
   State<FeedbackModal> createState() => _FeedbackModalState();
@@ -63,24 +63,23 @@ class _FeedbackModalState extends State<FeedbackModal> {
       _isSubmitting = true;
     });
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
+    // TODO: Add server integration when backend is ready
+    await Future.delayed(const Duration(milliseconds: 500));
 
     setState(() {
       _isSubmitting = false;
     });
 
-    // Show success message
+    // Show result message
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Thank you! Your feedback has been submitted successfully.'),
+          content: Text('Thank you! Your feedback has been saved locally.'),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 3),
         ),
       );
 
-      // Close modal
       Navigator.pop(context);
     }
   }

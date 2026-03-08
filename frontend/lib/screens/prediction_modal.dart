@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import '../models/bus_stop.dart';
+import '../services/prediction_service.dart';
 
 class PredictionModal extends StatefulWidget {
   final String busId;
@@ -10,11 +11,11 @@ class PredictionModal extends StatefulWidget {
   final String currentLocation;
 
   const PredictionModal({
-    Key? key,
+    super.key,
     required this.busId,
     required this.allStops,
     required this.currentLocation,
-  }) : super(key: key);
+  });
 
   @override
   State<PredictionModal> createState() => _PredictionModalState();
@@ -26,14 +27,14 @@ class _PredictionModalState extends State<PredictionModal> {
   static const Color textPrimary = Color(0xFF1F2937);
   static const Color textSecondary = Color(0xFF6B7280);
 
-  final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _desiredTimeController = TextEditingController();
-  
+
   BusStop? _selectedBoardingStop;
+  BusStop? _selectedDestinationStop;
   LatLng? _userLocation;
   GoogleMapController? _mapController;
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   
   bool _isLoadingLocation = true;
   bool _isPredicting = false;
@@ -49,7 +50,6 @@ class _PredictionModalState extends State<PredictionModal> {
 
   @override
   void dispose() {
-    _destinationController.dispose();
     _desiredTimeController.dispose();
     _mapController?.dispose();
     super.dispose();
@@ -108,20 +108,16 @@ class _PredictionModalState extends State<PredictionModal> {
       );
     }
 
-    // Add destination marker if entered - Red for destination
-    final destination = _destinationController.text.trim();
-    if (destination.isNotEmpty) {
-      final destCoords = _getDestinationCoordinates(destination);
-      if (destCoords != null) {
-        _markers.add(
-          Marker(
-            markerId: const MarkerId('destination'),
-            position: destCoords,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-            infoWindow: InfoWindow(title: 'Destination: $destination'),
-          ),
-        );
-      }
+    // Add destination stop marker if selected - Red for end
+    if (_selectedDestinationStop != null) {
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('destination_stop'),
+          position: LatLng(_selectedDestinationStop!.latitude, _selectedDestinationStop!.longitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: InfoWindow(title: 'Destination: ${_selectedDestinationStop!.name}'),
+        ),
+      );
     }
 
     // Add route polyline - Orange theme
@@ -144,24 +140,6 @@ class _PredictionModalState extends State<PredictionModal> {
     if (_mapController != null) {
       _fitMapToMarkers();
     }
-  }
-
-  LatLng? _getDestinationCoordinates(String destination) {
-    // Demo hardcoded destinations
-    final destinations = {
-      'galle face': LatLng(6.9271, 79.8466),
-      'lotus tower': LatLng(6.9286, 79.8553),
-      'kollupitiya': LatLng(6.9114, 79.8488),
-      'fort': LatLng(6.9344, 79.8499),
-    };
-
-    final destLower = destination.toLowerCase();
-    for (var entry in destinations.entries) {
-      if (destLower.contains(entry.key)) {
-        return entry.value;
-      }
-    }
-    return null;
   }
 
   void _fitMapToMarkers() {
@@ -198,10 +176,20 @@ class _PredictionModalState extends State<PredictionModal> {
       return;
     }
 
-    if (_destinationController.text.trim().isEmpty) {
+    if (_selectedDestinationStop == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter your destination'),
+          content: Text('Please select your destination'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedBoardingStop == _selectedDestinationStop) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Boarding stop and destination cannot be the same'),
           backgroundColor: Colors.red,
         ),
       );
@@ -223,45 +211,68 @@ class _PredictionModalState extends State<PredictionModal> {
       _showPrediction = false;
     });
 
-    // Simulate ML prediction API call
-    await Future.delayed(const Duration(seconds: 3));
-
-    // Demo prediction based on desired time
+    final predictionService = PredictionService();
     final desiredTime = int.tryParse(_desiredTimeController.text.trim()) ?? 30;
-    final predictedTime = (desiredTime * 0.95).toDouble(); // 95% of desired time
-    final predictedSeconds = (predictedTime * 60).toInt();
-    
-    String alertStatus;
-    String alertMessage;
-    Color alertColor;
 
-    if (predictedTime <= desiredTime) {
-      alertStatus = 'success';
-      alertMessage = 'SUCCESS: Actual predicted time (${predictedTime.toStringAsFixed(1)} min) is less than or equal to your desired time ($desiredTime min).';
-      alertColor = Colors.green;
-    } else if (predictedTime <= desiredTime + 5) {
-      alertStatus = 'warning';
-      alertMessage = 'WARNING: Predicted time (${predictedTime.toStringAsFixed(1)} min) is slightly more than desired time ($desiredTime min). Consider leaving earlier.';
-      alertColor = Colors.orange;
-    } else {
-      alertStatus = 'error';
-      alertMessage = 'ALERT: Predicted time (${predictedTime.toStringAsFixed(1)} min) significantly exceeds desired time ($desiredTime min). Plan alternative route.';
-      alertColor = Colors.red;
-    }
+    final response = await predictionService.predictDestination(
+      route: widget.busId,
+      boardingLocation: _selectedBoardingStop!.name,
+      destinationLocation: _selectedDestinationStop!.name,
+      userExpectedTime: desiredTime,
+    );
 
     setState(() {
       _isPredicting = false;
-      _showPrediction = true;
-      _predictionResult = {
-        'busId': widget.busId,
-        'predictedTimeMinutes': predictedTime.toStringAsFixed(1),
-        'predictedTimeSeconds': predictedSeconds,
-        'desiredTimeMinutes': desiredTime,
-        'alertStatus': alertStatus,
-        'alertMessage': alertMessage,
-        'alertColor': alertColor,
-      };
     });
+
+    if (response.success && response.data != null) {
+      final data = response.data!;
+      final prediction = data['prediction'] ?? {};
+      final timeComparison = data['time_comparison'] ?? {};
+
+      // Extract from the actual backend response structure
+      final predictedTime = (prediction['predicted_time_minutes'] ?? (desiredTime * 0.95)).toDouble();
+      final double diffMinutes = predictedTime - desiredTime;
+
+      String alertStatus;
+      Color alertColor;
+
+      // Backend status matching logic
+      if (diffMinutes <= 0) {
+        alertStatus = 'success';
+        alertColor = Colors.green;
+      } else if (diffMinutes <= 5) {
+        alertStatus = 'warning';
+        alertColor = Colors.orange;
+      } else {
+        alertStatus = 'error';
+        alertColor = Colors.red;
+      }
+
+      setState(() {
+        _showPrediction = true;
+        _predictionResult = {
+          'busId': widget.busId,
+          'predictedTimeMinutes': predictedTime.toStringAsFixed(1),
+          'desiredTimeMinutes': desiredTime,
+          'alertStatus': alertStatus,
+          'alertMessage': timeComparison['status'] ?? prediction['recommendation'] ?? 'Prediction processed.',
+          'alertColor': alertColor,
+          'distanceKm': prediction['journey_distance_km']?.toStringAsFixed(2) ?? 'N/A',
+          'trafficCondition': prediction['traffic_analysis'] != null ? prediction['traffic_analysis']['condition'] : 'Unknown',
+          'recommendation': prediction['recommendation'] ?? 'No specific route recommendations available.',
+        };
+      });
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response.errorMessage ?? 'Prediction failed. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -375,6 +386,10 @@ class _PredictionModalState extends State<PredictionModal> {
                         onChanged: (BusStop? stop) {
                           setState(() {
                             _selectedBoardingStop = stop;
+                            // Clear destination if it's the same as newly selected boarding stop
+                            if (_selectedDestinationStop == stop) {
+                              _selectedDestinationStop = null;
+                            }
                           });
                           _updateMap();
                         },
@@ -396,22 +411,37 @@ class _PredictionModalState extends State<PredictionModal> {
                   const SizedBox(height: 12),
 
                   Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     decoration: BoxDecoration(
                       border: Border.all(color: primaryColor.withOpacity(0.3), width: 1.5),
                       borderRadius: BorderRadius.circular(12),
+                      color: Colors.white,
                     ),
-                    child: TextField(
-                      controller: _destinationController,
-                      onChanged: (value) => _updateMap(),
-                      decoration: InputDecoration(
-                        hintText: 'e.g., Galle Face, Lotus Tower',
-                        hintStyle: TextStyle(color: Colors.grey[400]),
-                        prefixIcon: const Icon(Icons.flag, color: primaryColor),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 16,
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<BusStop>(
+                        value: _selectedDestinationStop,
+                        isExpanded: true,
+                        hint: const Text('Choose your destination stop'),
+                        icon: const Icon(Icons.arrow_drop_down, color: primaryColor),
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: textPrimary,
+                          fontWeight: FontWeight.w500,
                         ),
+                        items: widget.allStops
+                            .where((stop) => stop != _selectedBoardingStop)
+                            .map((stop) {
+                          return DropdownMenuItem(
+                            value: stop,
+                            child: Text(stop.name),
+                          );
+                        }).toList(),
+                        onChanged: (BusStop? stop) {
+                          setState(() {
+                            _selectedDestinationStop = stop;
+                          });
+                          _updateMap();
+                        },
                       ),
                     ),
                   ),
@@ -420,7 +450,7 @@ class _PredictionModalState extends State<PredictionModal> {
 
                   // Desired Time Input
                   const Text(
-                    'Desired Arrival Time (Minutes)',
+                    'Desired Journey Time (Minutes)',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -549,13 +579,13 @@ class _PredictionModalState extends State<PredictionModal> {
                                 ),
                               ],
                             )
-                          : const Row(
+                          : Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.psychology, color: Colors.white),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Predict Arrival Time',
+                                const Icon(Icons.psychology, color: Colors.white),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Predict Journey Time',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
@@ -603,7 +633,7 @@ class _PredictionModalState extends State<PredictionModal> {
                               ),
                               const SizedBox(width: 12),
                               const Text(
-                                'AI Prediction Result',
+                                'ML Prediction Result',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -681,7 +711,7 @@ class _PredictionModalState extends State<PredictionModal> {
 
                           const SizedBox(height: 16),
 
-                          // Additional Info
+                          // Additional Info replacing Time in Seconds
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
@@ -691,9 +721,11 @@ class _PredictionModalState extends State<PredictionModal> {
                             ),
                             child: Column(
                               children: [
-                                _buildInfoRow('Bus ID', _predictionResult!['busId']),
+                                _buildInfoRow('Distance', '${_predictionResult!['distanceKm']} km'),
                                 const Divider(height: 16),
-                                _buildInfoRow('Time in Seconds', '${_predictionResult!['predictedTimeSeconds']} sec'),
+                                _buildInfoRow('Traffic Analysis', _predictionResult!['trafficCondition']),
+                                const Divider(height: 16),
+                                _buildInfoRow('Recommendation', _predictionResult!['recommendation']),
                               ],
                             ),
                           ),
@@ -755,19 +787,28 @@ class _PredictionModalState extends State<PredictionModal> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            color: textSecondary,
+        Expanded(
+          flex: 2,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: textSecondary,
+            ),
           ),
         ),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: textPrimary,
+        Expanded(
+          flex: 3,
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: textPrimary,
+            ),
+            textAlign: TextAlign.right,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
