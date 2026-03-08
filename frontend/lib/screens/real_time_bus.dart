@@ -7,7 +7,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import '../models/bus_route_model.dart';
+import '../models/bus_stop.dart';
 import '../services/socket_service.dart';
+import 'prediction_modal.dart';
+import 'driver_contact_modal.dart';
 
 // --- ADDED MISSING BUS DATA CLASS ---
 class BusData {
@@ -56,11 +59,15 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     super.initState();
     _createBusIcon();
     _allRoutes = BusRouteModel.getAllRoutes();
+    print('Loaded ${_allRoutes.length} routes'); // DEBUG
     if (_allRoutes.isNotEmpty) {
       _selectedRoute = _allRoutes[0];
+      print('Selected route: ${_selectedRoute!.routeName}'); // DEBUG
       _updateMapForRoute();
       // CONNECT TO BACKEND SOCKET
       _connectBusSocket();
+    } else {
+      print('ERROR: No routes available!'); // DEBUG
     }
     // Start tracking the phone
     _startTrackingDeviceAsBus();
@@ -278,6 +285,9 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
                   latitude: position.latitude,
                   longitude: position.longitude,
                   speedInMps: position.speed,
+                  busId: 'ESP32_WROOM_DA_01',
+                  allStops: _selectedRoute!.stops,
+                  currentLocation: 'Kaduwela Bus Stand',
                 ),
               );
             },
@@ -329,6 +339,36 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_pin_circle, color: Colors.white, size: 28),
+            onPressed: () {
+              print('Person icon tapped'); // DEBUG
+              print('Selected route: $_selectedRoute'); // DEBUG
+              if (_selectedRoute != null) {
+                print('Opening driver contact modal...'); // DEBUG
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => DriverContactModal(
+                    busId: 'ESP32_WROOM_DA_01',
+                    currentLocation: 'Your Location',
+                    allStops: _selectedRoute!.stops,
+                  ),
+                );
+              } else {
+                print('ERROR: No route selected!'); // DEBUG
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please select a route first'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -529,12 +569,18 @@ class DeviceBusLiveDetailsModal extends StatefulWidget {
   final double latitude;
   final double longitude;
   final double speedInMps;
+  final String busId;
+  final List<BusStop> allStops;
+  final String currentLocation;
 
   const DeviceBusLiveDetailsModal({
     super.key,
     required this.latitude,
     required this.longitude,
     required this.speedInMps,
+    required this.busId,
+    required this.allStops,
+    required this.currentLocation,
   });
 
   @override
@@ -625,10 +671,24 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.person, color: Colors.white, size: 20),
+                GestureDetector(
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => DriverContactModal(
+                        busId: widget.busId,
+                        currentLocation: widget.currentLocation,
+                        allStops: widget.allStops,
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.person, color: Colors.white, size: 20),
+                  ),
                 ),
               ],
             ),
@@ -830,7 +890,18 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: () {},
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => PredictionModal(
+                      busId: widget.busId,
+                      allStops: widget.allStops,
+                      currentLocation: widget.currentLocation,
+                    ),
+                  );
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

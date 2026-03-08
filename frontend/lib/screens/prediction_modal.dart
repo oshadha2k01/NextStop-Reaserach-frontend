@@ -570,7 +570,7 @@ class _PredictionModalState extends State<PredictionModal> {
                                 ),
                                 const SizedBox(width: 12),
                                 const Text(
-                                  'Processing with AI...',
+                                  'Processing with ML...',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
