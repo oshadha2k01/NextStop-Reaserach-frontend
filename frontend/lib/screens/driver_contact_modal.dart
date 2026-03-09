@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/bus_stop.dart';
-import '../services/socket_service.dart';
+import '../config/api_config.dart';
 
 class DriverContactModal extends StatefulWidget {
   final String busId;
@@ -224,7 +227,7 @@ class _DriverContactModalState extends State<DriverContactModal> {
     _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
-  void _sendMessage() {
+  Future<void> _sendMessage() async {
     if (_selectedMessage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -236,28 +239,98 @@ class _DriverContactModalState extends State<DriverContactModal> {
       return;
     }
 
-    // Emit boarding request via Socket.IO
-    SocketService().emit('passenger-boarding-request', {
-      'busId': widget.busId,
-      'message': _selectedMessage,
-      'latitude': _userLocation?.latitude ?? 0,
-      'longitude': _userLocation?.longitude ?? 0,
-      'title': 'Passenger Request',
-    });
+    if (_userLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Wait for location to be fetched...'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
+    // Show loading state
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Message sent to driver: "$_selectedMessage"'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 3),
-      ),
+      const SnackBar(content: Text('Notifying driver...'), duration: Duration(seconds: 1)),
     );
 
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) {
-        Navigator.pop(context);
+    try {
+      final url = Uri.parse(ApiConfig.notify);
+      final requestBody = {
+        'deviceId': widget.busId,
+        'passengerLat': _userLocation!.latitude,
+        'passengerLng': _userLocation!.longitude,
+        'message': _selectedMessage,
+      };
+      
+      // DEBUG: Print request details
+      print('═══════════════════════════════════════════════════');
+      print('🚌 SENDING MESSAGE TO DRIVER DASHBOARD');
+      print('═══════════════════════════════════════════════════');
+      print('📍 API Endpoint: ${ApiConfig.notify}');
+      print('📦 Request Body: ${jsonEncode(requestBody)}');
+      print('🔑 Bus ID: ${widget.busId}');
+      print('📍 Passenger Location: ${_userLocation!.latitude}, ${_userLocation!.longitude}');
+      print('💬 Message: "$_selectedMessage"');
+      print('═══════════════════════════════════════════════════');
+      
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      ).timeout(
+        ApiConfig.requestTimeout,
+        onTimeout: () {
+          throw TimeoutException('Request timed out. Please try again.');
+        },
+      );
+
+      print('📨 Response Status: ${response.statusCode}');
+      print('📨 Response Body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        print('✅ SUCCESS: Message delivered to driver dashboard!');
+        print('📊 Distance: ${responseData['data']?['distance']}');
+        print('⏱️  Estimated Time: ${responseData['data']?['estimatedTime']}');
+        print('🚏 Stops Away: ${responseData['data']?['stopsAway']}');
+        print('');
+        print('🔔 DRIVER DASHBOARD TROUBLESHOOTING:');
+        print('   1. Check your backend console for: "Notification sent to room: bus-XXXXX"');
+        print('   2. Verify driver dashboard joined the SAME room');
+        print('   3. Driver dashboard must listen for "passenger_boarding" event');
+        print('   4. Backend resolves busId from deviceId: ${widget.busId}');
+        print('═══════════════════════════════════════════════════');
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Success! Sent to driver: "$_selectedMessage"'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted) Navigator.pop(context);
+        });
+      } else {
+        print('❌ ERROR: Server returned status ${response.statusCode}');
+        print('═══════════════════════════════════════════════════');
+        
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['error'] ?? 'Server returned an error');
       }
-    });
+    } catch (e) {
+      print('❌ EXCEPTION: ${e.toString()}');
+      print('═══════════════════════════════════════════════════');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   @override
