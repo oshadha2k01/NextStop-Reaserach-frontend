@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import '../models/bus_route_model.dart';
 import '../models/bus_stop.dart';
+import '../models/people_count_model.dart';
 import '../services/socket_service.dart';
 import 'prediction_modal.dart';
 import 'driver_contact_modal.dart';
@@ -593,8 +594,59 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
   bool _isLoadingEta = false;
   Map<String, dynamic>? _etaResult;
   String _errorMessage = '';
+  
+  // People count state
+  PeopleCountModel? _peopleCountData;
+  bool _isLoadingPeopleCount = true;
+  Timer? _peopleCountTimer;
+  static const int totalSeats = 52;
 
   double get speedKmh => widget.speedInMps * 3.6;
+  
+  @override
+  void initState() {
+    super.initState();
+    _fetchPeopleCount();
+    // Fetch people count every 3 seconds for real-time updates
+    _peopleCountTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      _fetchPeopleCount();
+    });
+  }
+  
+  @override
+  void dispose() {
+    _peopleCountTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchPeopleCount() async {
+    try {
+      final url = 'https://smartbusstop.me/backend/api/dl/peopleConut';
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            _peopleCountData = PeopleCountModel.fromJson(data);
+            _isLoadingPeopleCount = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isLoadingPeopleCount = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingPeopleCount = false;
+        });
+      }
+    }
+  }
 
   Future<void> _fetchEtaFromBackend() async {
     setState(() {
@@ -728,7 +780,12 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
             ),
             const SizedBox(height: 20),
 
-            Container(
+            _isLoadingPeopleCount
+              ? const Center(child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: CircularProgressIndicator(color: primaryColor),
+                ))
+              : Container(
               padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(15)),
               child: Column(
@@ -736,21 +793,44 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
                 children: [
                   const Text("Seating Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 15),
-                  const Row(
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(children: [Text("52", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.grey)), Text("Total Seats", style: TextStyle(color: Colors.grey, fontSize: 12))]),
-                      Column(children: [Text("20", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red)), Text("Occupied", style: TextStyle(color: Colors.grey, fontSize: 12))]),
-                      Column(children: [Text("32", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)), Text("Available", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                      Column(children: [Text("$totalSeats", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.grey)), const Text("Total Seats", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                      Column(children: [Text("${_peopleCountData?.totalPeople ?? 0}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red)), const Text("Occupied", style: TextStyle(color: Colors.grey, fontSize: 12))]),
+                      Column(children: [Text("${totalSeats - (_peopleCountData?.totalPeople ?? 0)}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)), const Text("Available", style: TextStyle(color: Colors.grey, fontSize: 12))]),
                     ]
                   ),
                   const SizedBox(height: 15),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(5),
-                    child: LinearProgressIndicator(value: 20/52, minHeight: 8, backgroundColor: Colors.grey.shade200, valueColor: const AlwaysStoppedAnimation(primaryColor)),
+                    child: LinearProgressIndicator(
+                      value: (_peopleCountData?.totalPeople ?? 0) / totalSeats, 
+                      minHeight: 8, 
+                      backgroundColor: Colors.grey.shade200, 
+                      valueColor: const AlwaysStoppedAnimation(primaryColor)
+                    ),
                   ),
                   const SizedBox(height: 10),
-                  const Row(children: [Icon(Icons.check_circle, color: Colors.green, size: 16), SizedBox(width: 5), Text("Comfortable", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))])
+                  Row(children: [
+                    Icon(
+                      (_peopleCountData?.totalPeople ?? 0) < totalSeats * 0.5 ? Icons.check_circle : 
+                      (_peopleCountData?.totalPeople ?? 0) < totalSeats * 0.8 ? Icons.info : Icons.warning,
+                      color: (_peopleCountData?.totalPeople ?? 0) < totalSeats * 0.5 ? Colors.green : 
+                             (_peopleCountData?.totalPeople ?? 0) < totalSeats * 0.8 ? Colors.orange : Colors.red,
+                      size: 16
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      (_peopleCountData?.totalPeople ?? 0) < totalSeats * 0.5 ? "Comfortable" : 
+                      (_peopleCountData?.totalPeople ?? 0) < totalSeats * 0.8 ? "Moderate" : "Crowded",
+                      style: TextStyle(
+                        color: (_peopleCountData?.totalPeople ?? 0) < totalSeats * 0.5 ? Colors.green : 
+                               (_peopleCountData?.totalPeople ?? 0) < totalSeats * 0.8 ? Colors.orange : Colors.red,
+                        fontWeight: FontWeight.bold
+                      )
+                    )
+                  ])
                 ],
               ),
             ),
@@ -758,7 +838,12 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
 
             const Text("Passenger Movement", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 10),
-            Row(
+            _isLoadingPeopleCount
+              ? const Center(child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: CircularProgressIndicator(color: primaryColor),
+                ))
+              : Row(
               children: [
                 Expanded(
                   child: Container(
@@ -770,9 +855,9 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
                         const SizedBox(width: 10),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text("5", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18)), 
-                            Text("Boarded", style: TextStyle(fontSize: 12, color: Colors.green))
+                          children: [
+                            Text("${_peopleCountData?.inCount ?? 0}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18)), 
+                            const Text("Boarded", style: TextStyle(fontSize: 12, color: Colors.green))
                           ],
                         )
                       ],
@@ -790,9 +875,9 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
                         const SizedBox(width: 10),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text("3", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 18)), 
-                            Text("Alighted", style: TextStyle(fontSize: 12, color: Colors.orange))
+                          children: [
+                            Text("${_peopleCountData?.outCount ?? 0}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 18)), 
+                            const Text("Alighted", style: TextStyle(fontSize: 12, color: Colors.orange))
                           ],
                         )
                       ],
