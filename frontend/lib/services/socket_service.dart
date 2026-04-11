@@ -1,63 +1,50 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import '../config/api_config.dart';
-import 'auth_service.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() => _instance;
   SocketService._internal();
 
-  IO.Socket? _socket;
-  bool _isConnected = false;
+  IO.Socket? socket;
 
-  bool get isConnected => _isConnected;
-  IO.Socket? get socket => _socket;
+  bool get isConnected => socket?.connected ?? false;
 
-  Future<void> connect() async {
-    if (_isConnected && _socket != null) return;
-
-    final token = await AuthService().getToken();
-
-    _socket = IO.io(
-      ApiConfig.socketUrl,
+  void initSocket() {
+    socket = IO.io(
+      'https://smartbusstop.me',
       IO.OptionBuilder()
           .setTransports(['websocket'])
-          .disableAutoConnect()
-          .setAuth({'token': token ?? ''})
+          .setPath('/backend/socket.io')
+          .enableAutoConnect()
           .build(),
     );
 
-    _socket!.onConnect((_) {
-      _isConnected = true;
+    socket?.onConnect((_) {
+      print('Passenger Socket Connected successfully!');
     });
 
-    _socket!.onDisconnect((_) {
-      _isConnected = false;
+    socket?.onConnectError((error) {
+      print('Passenger Socket Error: $error');
     });
-
-    _socket!.onConnectError((error) {
-      _isConnected = false;
-    });
-
-    _socket!.connect();
   }
 
+  Future<void> connect() async => initSocket();
+
   void on(String event, Function(dynamic) callback) {
-    _socket?.on(event, callback);
+    socket?.on(event, callback);
   }
 
   void emit(String event, [dynamic data]) {
-    _socket?.emit(event, data);
+    socket?.emit(event, data);
   }
 
   void off(String event) {
-    _socket?.off(event);
+    socket?.off(event);
   }
 
   void disconnect() {
-    _socket?.disconnect();
-    _socket?.dispose();
-    _socket = null;
-    _isConnected = false;
+    socket?.disconnect();
+    socket?.dispose();
+    socket = null;
   }
 }
