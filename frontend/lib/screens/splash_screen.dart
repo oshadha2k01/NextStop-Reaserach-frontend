@@ -37,14 +37,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     if (!mounted) return;
 
     final isAuthenticated = await AuthService().isAuthenticated();
-    final userType = await AuthService().getUserType();
+    if (!mounted) return;
 
     if (isAuthenticated) {
-      if (userType == 'driver') {
-        Navigator.of(context).pushReplacementNamed('/driver-home');
-      } else {
-        Navigator.of(context).pushReplacementNamed('/home');
-      }
+      Navigator.of(context).pushReplacementNamed('/home');
     } else {
       Navigator.of(context).pushReplacementNamed('/onboarding');
     }

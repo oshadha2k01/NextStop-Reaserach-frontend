@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'driver_login_screen.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -21,7 +20,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   String? _phoneError;
   bool _acceptedTerms = false;
   bool _isLoading = false;
-  bool _isDriver = false;
 
   @override
   void dispose() {
@@ -81,10 +79,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   String? _validateName(String value) {
     if (value.isEmpty) {
-      return 'Please enter your name';
+      return 'Please enter your first name';
     }
     if (value.length < 2) {
-      return 'Name must be at least 2 characters';
+      return 'First name must be at least 2 characters';
     }
     return null;
   }
@@ -160,102 +158,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ),
                     
                     const SizedBox(height: 30),
-                    
-                    // Driver/Passenger Toggle
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _isDriver = false;
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: !_isDriver ? const Color(0xFFFF6B35) : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.person,
-                                      color: !_isDriver ? Colors.white : Colors.grey[600],
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Passenger',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: !_isDriver ? Colors.white : Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () {
-                                // Navigate directly to driver login
-                                Navigator.of(context).pushReplacement(
-                                  MaterialPageRoute(
-                                    builder: (context) => const DriverLoginScreen(),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: _isDriver ? const Color(0xFFFF6B35) : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.drive_eta,
-                                      color: _isDriver ? Colors.white : Colors.grey[600],
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Driver',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: _isDriver ? Colors.white : Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 8),
                     
                     // Name field
-                    _buildLabel('Full Name'),
+                    _buildLabel('First Name'),
                     const SizedBox(height: 8),
                     _buildTextField(
                       controller: _nameController,
-                      hint: 'Enter your full name',
+                      hint: 'Enter your first name',
                       error: _nameError,
                       prefixIcon: Icons.person_outline,
                       onChanged: (value) {
