@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 
+import '../services/auth_service.dart';
+
 class EmailVerificationScreen extends StatefulWidget {
   const EmailVerificationScreen({super.key});
 
@@ -79,17 +81,11 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     }
   }
 
-  void _onBackspace(int index) {
-    if (_controllers[index].text.isEmpty && index > 0) {
-      _focusNodes[index - 1].requestFocus();
-      _controllers[index - 1].clear();
-    }
-  }
-
   void _verifyOTP() async {
     FocusScope.of(context).unfocus();
 
     String otp = _controllers.map((c) => c.text).join();
+    final String email = ModalRoute.of(context)?.settings.arguments as String? ?? '';
 
     if (otp.length != 6) {
       setState(() {
@@ -98,38 +94,74 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       return;
     }
 
+    if (email.isEmpty) {
+      setState(() {
+        _errorMessage = 'Email address not found. Please restart registration.';
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    // TODO: Add server verification when backend is ready
-    await Future.delayed(const Duration(milliseconds: 500));
+    final result = await AuthService().verifyOTP(
+      email: email,
+      otp: otp,
+    );
 
     setState(() {
       _isLoading = false;
     });
 
-    if (mounted) {
-      Navigator.of(context).pushReplacementNamed('/home');
+    if (result['success'] == true) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']?.toString() ?? 'Verification successful'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pushReplacementNamed('/home');
+      }
+    } else if (mounted) {
+      setState(() {
+        _errorMessage = result['message']?.toString() ?? 'Verification failed';
+      });
     }
   }
 
   void _resendOTP() async {
     if (!_canResend) return;
 
+    final String email = ModalRoute.of(context)?.settings.arguments as String? ?? '';
+    if (email.isEmpty) return;
+
     for (var controller in _controllers) {
       controller.clear();
     }
     _focusNodes[0].requestFocus();
 
-    _startCountdown();
+    final result = await AuthService().resendOTP(email: email);
 
-    if (mounted) {
+    if (result['success'] == true) {
+      _startCountdown();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']?.toString() ?? 'Verification code sent successfully!'),
+            backgroundColor: const Color(0xFFFF6B35),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Verification code sent successfully!'),
-          backgroundColor: Color(0xFFFF6B35),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Failed to resend code'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 2),
         ),
       );
     }
@@ -170,7 +202,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     width: 100,
                     height: 100,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF6B35).withOpacity(0.1),
+                      color: const Color(0xFFFF6B35).withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(

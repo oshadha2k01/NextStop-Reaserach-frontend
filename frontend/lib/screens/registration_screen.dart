@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/auth_service.dart';
+
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
 
@@ -14,10 +16,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
-
-  String? _nameError;
-  String? _emailError;
-  String? _phoneError;
   bool _acceptedTerms = false;
   bool _isLoading = false;
 
@@ -34,18 +32,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     await prefs.setString('user_name', _nameController.text.trim());
     await prefs.setString('user_email', _emailController.text.trim());
     await prefs.setString('user_phone', '+94${_phoneController.text.trim()}');
-    await prefs.setBool('is_registered', true);
-    await prefs.setBool('is_driver', false);
   }
 
   void _validateAndSubmit() async {
     FocusScope.of(context).unfocus();
-    
-    setState(() {
-      _nameError = _validateName(_nameController.text);
-      _emailError = _validateEmail(_emailController.text);
-      _phoneError = _validatePhone(_phoneController.text);
-    });
 
     if (!_acceptedTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -57,55 +47,85 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       return;
     }
 
-    if (_nameError == null && _emailError == null && _phoneError == null) {
-      setState(() {
-        _isLoading = true;
-      });
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
+    setState(() {
+      _isLoading = true;
+    });
+
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final formattedPhone = '+94${_phoneController.text.trim()}';
+
+    final result = await AuthService().registerUser(
+      name: name,
+      email: email,
+      phoneNumber: formattedPhone,
+    );
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (result['success'] == true) {
       await _saveToLocalStorage();
 
-      setState(() {
-        _isLoading = false;
-      });
-
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']?.toString() ?? 'OTP sent successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.of(context).pushReplacementNamed(
           '/email-verification',
-          arguments: _emailController.text,
+          arguments: email,
         );
       }
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Registration failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  String? _validateName(String value) {
-    if (value.isEmpty) {
+  String? _validateName(String? value) {
+    final trimmedValue = value?.trim() ?? '';
+    if (trimmedValue.isEmpty) {
       return 'Please enter your first name';
     }
-    if (value.length < 2) {
+    if (trimmedValue.length < 2) {
       return 'First name must be at least 2 characters';
     }
     return null;
   }
 
-  String? _validateEmail(String value) {
-    if (value.isEmpty) {
+  String? _validateEmail(String? value) {
+    final trimmedValue = value?.trim() ?? '';
+    if (trimmedValue.isEmpty) {
       return 'Please enter your email';
     }
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegex.hasMatch(value)) {
+    if (!emailRegex.hasMatch(trimmedValue)) {
       return 'Please enter a valid email address';
     }
     return null;
   }
 
-  String? _validatePhone(String value) {
-    if (value.isEmpty) {
+  String? _validatePhone(String? value) {
+    final trimmedValue = value?.trim() ?? '';
+    if (trimmedValue.isEmpty) {
       return 'Please enter your phone number';
     }
-    if (value.length != 9) {
+    if (trimmedValue.length != 9) {
       return 'Phone number must be 9 digits';
     }
-    if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
+    if (!RegExp(r'^[0-9]+$').hasMatch(trimmedValue)) {
       return 'Please enter only numbers';
     }
     return null;
@@ -166,15 +186,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     _buildTextField(
                       controller: _nameController,
                       hint: 'Enter your first name',
-                      error: _nameError,
                       prefixIcon: Icons.person_outline,
-                      onChanged: (value) {
-                        if (_nameError != null) {
-                          setState(() {
-                            _nameError = _validateName(value);
-                          });
-                        }
-                      },
+                      validator: _validateName,
                     ),
                     
                     const SizedBox(height: 24),
@@ -185,16 +198,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     _buildTextField(
                       controller: _emailController,
                       hint: 'Enter your email',
-                      error: _emailError,
                       prefixIcon: Icons.email_outlined,
                       keyboardType: TextInputType.emailAddress,
-                      onChanged: (value) {
-                        if (_emailError != null) {
-                          setState(() {
-                            _emailError = _validateEmail(value);
-                          });
-                        }
-                      },
+                      validator: _validateEmail,
                     ),
                     
                     const SizedBox(height: 24),
@@ -329,132 +335,111 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     required TextEditingController controller,
     required String hint,
     required IconData prefixIcon,
-    String? error,
     TextInputType? keyboardType,
-    Function(String)? onChanged,
+    TextInputAction? textInputAction,
+    String? Function(String?)? validator,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: error != null ? Colors.red : Colors.grey[300]!,
-              width: 1.5,
-            ),
-          ),
-          child: TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            onChanged: onChanged,
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: Icon(
-                prefixIcon,
-                color: error != null ? Colors.red : const Color(0xFFFF6B35),
-              ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            ),
-          ),
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      validator: validator,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.grey[400]),
+        prefixIcon: Icon(
+          prefixIcon,
+          color: const Color(0xFFFF6B35),
         ),
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, left: 12),
-            child: Text(
-              error,
-              style: const TextStyle(
-                color: Colors.red,
-                fontSize: 12,
-              ),
-            ),
-          ),
-      ],
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!, width: 1.5),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!, width: 1.5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFFF6B35), width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.red, width: 1.5),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.red, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
     );
   }
 
   Widget _buildPhoneField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _phoneError != null ? Colors.red : Colors.grey[300]!,
-              width: 1.5,
-            ),
-          ),
+    return TextFormField(
+      controller: _phoneController,
+      keyboardType: TextInputType.phone,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      validator: _validatePhone,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(9),
+      ],
+      decoration: InputDecoration(
+        prefixIcon: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Country code with flag
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    const Text(
-                      '🇱🇰',
-                      style: TextStyle(fontSize: 24),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '+94',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: _phoneError != null ? Colors.red : Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      height: 24,
-                      width: 1,
-                      color: Colors.grey[300],
-                    ),
-                  ],
+              const Text(
+                '🇱🇰',
+                style: TextStyle(fontSize: 24),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '+94',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
                 ),
               ),
-              // Phone number input
-              Expanded(
-                child: TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(9),
-                  ],
-                  onChanged: (value) {
-                    if (_phoneError != null) {
-                      setState(() {
-                        _phoneError = _validatePhone(value);
-                      });
-                    }
-                  },
-                  decoration: InputDecoration(
-                    hintText: '77 123 4567',
-                    hintStyle: TextStyle(color: Colors.grey[400]),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  ),
-                ),
+              const SizedBox(width: 8),
+              Container(
+                height: 24,
+                width: 1,
+                color: Colors.grey[300],
               ),
             ],
           ),
         ),
-        if (_phoneError != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, left: 12),
-            child: Text(
-              _phoneError!,
-              style: const TextStyle(
-                color: Colors.red,
-                fontSize: 12,
-              ),
-            ),
-          ),
-      ],
+        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+        hintText: '77 123 4567',
+        hintStyle: TextStyle(color: Colors.grey[400]),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!, width: 1.5),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!, width: 1.5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFFF6B35), width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.red, width: 1.5),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.red, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
     );
   }
 }
