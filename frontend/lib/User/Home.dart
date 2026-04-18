@@ -1,20 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bus_route_model.dart';
-import '../services/route_service.dart';
-import '../screens/route_map_screen.dart';
-import '../screens/real_time_bus.dart';
-import '../screens/crowd_prediction_modal.dart';
-import '../screens/ticket_calculator_modal.dart';
-import '../screens/all_routes_screen.dart';
-import '../screens/feedback_modal.dart';
-import '../screens/live_tracking_screen.dart';
+import '../screens/routes/route_map_screen.dart';
+import '../screens/live/real_time_bus.dart';
+import '../screens/modals/crowd_prediction_modal.dart';
+import '../screens/modals/ticket_calculator_modal.dart';
+import '../screens/routes/all_routes_screen.dart';
+import '../screens/modals/feedback_modal.dart';
+import '../screens/live/live_tracking_screen.dart';
 import '../services/location_service.dart';
-import 'package:location/location.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
+import '../core/theme/app_colors.dart';
 
 void main() {
   runApp(const MyApp());
@@ -48,7 +46,7 @@ class _HomePageState extends State<HomePage> {
   
   // --- Live Tracking Variables ---
   final Completer<GoogleMapController> _mapController = Completer();
-  IO.Socket? socket;
+  io.Socket? socket;
   LatLng? liveBusLocation;
   Map<String, dynamic>? busData;
 
@@ -67,7 +65,7 @@ class _HomePageState extends State<HomePage> {
     // If using Android Studio Emulator: Use 'http://10.0.2.2:5000'
     String serverUrl = 'http://192.168.8.118:5000'; 
 
-    socket = IO.io(serverUrl, IO.OptionBuilder()
+    socket = io.io(serverUrl, io.OptionBuilder()
         .setTransports(['websocket'])
         .disableAutoConnect()
         .build()
@@ -76,12 +74,12 @@ class _HomePageState extends State<HomePage> {
     socket!.connect();
 
     socket!.onConnect((_) {
-      print('🟢 Connected to Node.js Live Tracking Server');
+      debugPrint('Connected to Node.js live tracking server');
     });
 
     // Listen for the ESP32 data coming from Node.js
     socket!.on('bus_location_update', (data) {
-      print('🚌 Live Bus Update Received: $data');
+      debugPrint('Live bus update received: $data');
       
       if (mounted) {
         setState(() {
@@ -95,7 +93,7 @@ class _HomePageState extends State<HomePage> {
     });
 
     socket!.onDisconnect((_) {
-      print('🔴 Disconnected from Server');
+      debugPrint('Disconnected from live tracking server');
     });
   }
 
@@ -112,12 +110,12 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  // Orange and white color palette matching onboarding
-  static const Color primaryColor = Color(0xFFFF6B35); // Orange
-  static const Color backgroundColor = Colors.white;
-  static const Color cardColor = Colors.white;
-  static const Color textPrimary = Color(0xFF1F2937);
-  static const Color textSecondary = Color(0xFF6B7280);
+  // Keep aliases for readability in this large file.
+  static const Color primaryColor = AppColors.primary;
+  static const Color backgroundColor = AppColors.background;
+  static const Color cardColor = AppColors.surface;
+  static const Color textPrimary = AppColors.textPrimary;
+  static const Color textSecondary = AppColors.textSecondary;
 
   final TextEditingController _searchController = TextEditingController();
   GoogleMapController? _mapControllerBase;
@@ -185,7 +183,7 @@ class _HomePageState extends State<HomePage> {
         _showLocationServiceDialog();
       }
     } catch (e) {
-      print('Error: $e');
+      debugPrint('Location error: $e');
       setState(() => _isLoadingLocation = false);
     }
   }
@@ -218,45 +216,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showPermissionDeniedDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Location Permission Denied'),
-        content: const Text('Please grant location permission to use this feature.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showPermissionDeniedForeverDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Location Permission Required'),
-        content: const Text('Please enable location permission in your device settings.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Geolocator.openLocationSettings();
-            },
-            child: const Text('Open Settings'),
-          ),
-        ],
-      ),
-    );
-  }
-
   // Function to get time-based greeting
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -282,7 +241,7 @@ class _HomePageState extends State<HomePage> {
   void _onFilterTap() {
     // Handle filter action
     // TODO: Show filter options
-    print('Filter tapped');
+    debugPrint('Filter tapped');
   }
 
   @override
@@ -297,7 +256,11 @@ class _HomePageState extends State<HomePage> {
             // ---------------- SECTION 1: HEADER ----------------
             Container(
               decoration: BoxDecoration(
-                color: primaryColor,
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primary, AppColors.primaryDeep],
+                ),
                 borderRadius: const BorderRadius.only(
                   bottomLeft: Radius.circular(30),
                   bottomRight: Radius.circular(30),
@@ -332,7 +295,7 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         _getGreeting(), 
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                           fontSize: 14,
                         ),
                       ),
@@ -361,7 +324,7 @@ class _HomePageState extends State<HomePage> {
                           border: Border.all(color: Colors.grey.shade300, width: 1.5),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
+                              color: Colors.black.withValues(alpha: 0.05),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -384,7 +347,7 @@ class _HomePageState extends State<HomePage> {
                               child: Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: primaryColor.withOpacity(0.1),
+                                  color: primaryColor.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: const Icon(Icons.tune, 
@@ -431,7 +394,7 @@ class _HomePageState extends State<HomePage> {
                           color: Colors.grey.shade300,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: Colors.black.withValues(alpha: 0.1),
                               blurRadius: 15,
                               offset: const Offset(0, 5),
                             ),
@@ -466,7 +429,7 @@ class _HomePageState extends State<HomePage> {
                               ),
                               if (_isLoadingLocation)
                                 Container(
-                                  color: Colors.white.withOpacity(0.7),
+                                  color: Colors.white.withValues(alpha: 0.7),
                                   child: const Center(
                                     child: CircularProgressIndicator(
                                       valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
@@ -490,7 +453,7 @@ class _HomePageState extends State<HomePage> {
                         border: Border.all(color: Colors.grey.shade200, width: 1),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
+                            color: Colors.black.withValues(alpha: 0.08),
                             blurRadius: 20,
                             offset: const Offset(0, -2),
                           ),
@@ -570,10 +533,10 @@ class _HomePageState extends State<HomePage> {
         decoration: BoxDecoration(
           color: cardColor,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: primaryColor.withOpacity(0.3), width: 1.5),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.3), width: 1.5),
           boxShadow: [
             BoxShadow(
-              color: primaryColor.withOpacity(0.1),
+              color: primaryColor.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -585,7 +548,7 @@ class _HomePageState extends State<HomePage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: primaryColor.withOpacity(0.1),
+                color: primaryColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: primaryColor, size: 28),
@@ -631,9 +594,9 @@ class RouteSearchModal extends StatefulWidget {
 class _RouteSearchModalState extends State<RouteSearchModal> {
   final TextEditingController _fromController = TextEditingController();
   final TextEditingController _toController = TextEditingController();
-  static const Color primaryColor = Color(0xFFFF6B35);
-  static const Color textPrimary = Color(0xFF1F2937);
-  static const Color textSecondary = Color(0xFF6B7280);
+  static const Color primaryColor = AppColors.primary;
+  static const Color textPrimary = AppColors.textPrimary;
+  static const Color textSecondary = AppColors.textSecondary;
   bool _fromHasError = false;
   bool _toHasError = false;
   String _fromErrorMessage = '';
