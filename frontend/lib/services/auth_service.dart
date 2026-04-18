@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,6 +12,7 @@ class AuthService {
   AuthService._internal();
 
   static const String _tokenKey = 'auth_token';
+  static const String _sessionExpiryKey = 'auth_session_expires_at';
   static const String _userTypeKey = 'user_type';
   static const String _userIdKey = 'user_id';
 
@@ -25,9 +27,10 @@ class AuthService {
             Uri.parse(ApiConfig.userRegister),
             headers: const {'Content-Type': 'application/json'},
             body: jsonEncode({
-              'name': name,
+              'firstName': name,
               'email': email,
-              'phoneNumber': phoneNumber,
+              'phone': phoneNumber,
+              'acceptedTerms': true,
             }),
           )
           .timeout(ApiConfig.requestTimeout);
@@ -41,9 +44,14 @@ class AuthService {
         };
       }
 
+      debugPrint('registerUser failed: ${response.statusCode} ${response.body}');
+
       return {
         'success': false,
-        'message': data['message'] ?? data['error'] ?? 'Registration failed',
+        'message': _extractErrorMessage(
+          data,
+          fallback: response.body.isNotEmpty ? response.body : 'Registration failed',
+        ),
       };
     } catch (_) {
       return {
@@ -76,6 +84,10 @@ class AuthService {
           await saveToken(data['token'] as String);
         }
 
+        await saveSessionExpiry(
+          DateTime.now().toUtc().add(const Duration(days: 30)),
+        );
+
         final user = data['user'];
         if (user is Map<String, dynamic>) {
           final userId = user['_id'] ?? user['id'];
@@ -93,9 +105,14 @@ class AuthService {
         };
       }
 
+      debugPrint('verifyOTP failed: ${response.statusCode} ${response.body}');
+
       return {
         'success': false,
-        'message': data['message'] ?? data['error'] ?? 'Invalid OTP',
+        'message': _extractErrorMessage(
+          data,
+          fallback: response.body.isNotEmpty ? response.body : 'Invalid OTP',
+        ),
       };
     } catch (_) {
       return {
@@ -124,9 +141,14 @@ class AuthService {
         };
       }
 
+      debugPrint('resendOTP failed: ${response.statusCode} ${response.body}');
+
       return {
         'success': false,
-        'message': data['message'] ?? data['error'] ?? 'Failed to resend OTP',
+        'message': _extractErrorMessage(
+          data,
+          fallback: response.body.isNotEmpty ? response.body : 'Failed to resend OTP',
+        ),
       };
     } catch (_) {
       return {
@@ -148,6 +170,23 @@ class AuthService {
     return <String, dynamic>{};
   }
 
+  String _extractErrorMessage(
+    Map<String, dynamic> data, {
+    required String fallback,
+  }) {
+    final message = data['message'] ?? data['error'] ?? data['errors'];
+    if (message is String && message.trim().isNotEmpty) {
+      return message;
+    }
+    if (message is List && message.isNotEmpty) {
+      return message.first.toString();
+    }
+    if (message is Map && message.isNotEmpty) {
+      return message.values.first.toString();
+    }
+    return fallback;
+  }
+
   Future<void> _markRegistered() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_registered', true);
@@ -159,14 +198,40 @@ class AuthService {
     await prefs.setString(_tokenKey, token);
   }
 
+  Future<void> saveSessionExpiry(DateTime expiresAt) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_sessionExpiryKey, expiresAt.toIso8601String());
+  }
+
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_tokenKey);
   }
 
   Future<bool> isAuthenticated() async {
-    final token = await getToken();
-    return token != null && token.isNotEmpty;
+    final prefs = await SharedPreferences.getInstance();
+    final expiryValue = prefs.getString(_sessionExpiryKey);
+
+    if (expiryValue != null && expiryValue.isNotEmpty) {
+      final expiry = DateTime.tryParse(expiryValue);
+      if (expiry != null) {
+        final now = DateTime.now().toUtc();
+        if (expiry.isAfter(now)) {
+          return true;
+        }
+
+        await _clearExpiredSession(prefs);
+        return false;
+      }
+    }
+
+    final token = prefs.getString(_tokenKey);
+    if (token != null && token.isNotEmpty) {
+      await saveSessionExpiry(DateTime.now().toUtc().add(const Duration(days: 30)));
+      return true;
+    }
+
+    return false;
   }
 
   Future<void> saveUserType(String type) async {
@@ -187,7 +252,19 @@ class AuthService {
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
+    await prefs.remove(_sessionExpiryKey);
     await prefs.remove(_userTypeKey);
     await prefs.remove(_userIdKey);
+    await prefs.remove('is_registered');
+    await prefs.remove('is_driver');
+  }
+
+  Future<void> _clearExpiredSession(SharedPreferences prefs) async {
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_sessionExpiryKey);
+    await prefs.remove(_userTypeKey);
+    await prefs.remove(_userIdKey);
+    await prefs.remove('is_registered');
+    await prefs.remove('is_driver');
   }
 }

@@ -10,7 +10,7 @@ class ApiConfig {
   static const String verifyOtp = '$baseUrl/drivers/verify-otp';
   static const String resendOtp = '$baseUrl/drivers/resend-otp';
   static const String userRegister = '$baseUrl/user-register/register';
-  static const String userVerifyOtp = '$baseUrl/user-register/verify';
+  static const String userVerifyOtp = '$baseUrl/user-register/verify-otp';
   static const String userResendOtp = '$baseUrl/user-register/resend-otp';
 
   // Route endpoints
