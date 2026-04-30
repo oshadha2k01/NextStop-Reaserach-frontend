@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'dart:math';
+import 'dart:math' as math;
 import '../models/bus_stop.dart';
 import '../models/bus_route_model.dart';
 import '../services/prediction_service.dart';
@@ -29,6 +29,29 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
   bool _showResult = false;
   Map<String, dynamic>? _ticketResult;
 
+  // 100% Match with the new 20-stop Backend JSON
+  final Map<String, double> _fareMatrix = {
+    "0_to_1": 30.0, "0_to_2": 39.0, "0_to_3": 39.0, "0_to_4": 50.0, "0_to_5": 50.0, "0_to_6": 62.0, "0_to_7": 62.0, "0_to_8": 74.0, "0_to_9": 85.0, "0_to_10": 85.0, "0_to_11": 97.0, "0_to_12": 97.0, "0_to_13": 101.0, "0_to_14": 101.0, "0_to_15": 101.0, "0_to_16": 109.0, "0_to_17": 109.0, "0_to_18": 116.0, "0_to_19": 116.0,
+    "1_to_2": 30.0, "1_to_3": 30.0, "1_to_4": 39.0, "1_to_5": 39.0, "1_to_6": 50.0, "1_to_7": 50.0, "1_to_8": 62.0, "1_to_9": 74.0, "1_to_10": 74.0, "1_to_11": 85.0, "1_to_12": 85.0, "1_to_13": 97.0, "1_to_14": 97.0, "1_to_15": 97.0, "1_to_16": 101.0, "1_to_17": 101.0, "1_to_18": 109.0, "1_to_19": 109.0,
+    "2_to_3": 30.0, "2_to_4": 30.0, "2_to_5": 30.0, "2_to_6": 39.0, "2_to_7": 39.0, "2_to_8": 50.0, "2_to_9": 62.0, "2_to_10": 62.0, "2_to_11": 74.0, "2_to_12": 74.0, "2_to_13": 85.0, "2_to_14": 85.0, "2_to_15": 85.0, "2_to_16": 97.0, "2_to_17": 97.0, "2_to_18": 101.0, "2_to_19": 101.0,
+    "3_to_4": 30.0, "3_to_5": 30.0, "3_to_6": 39.0, "3_to_7": 39.0, "3_to_8": 50.0, "3_to_9": 62.0, "3_to_10": 62.0, "3_to_11": 74.0, "3_to_12": 74.0, "3_to_13": 85.0, "3_to_14": 85.0, "3_to_15": 85.0, "3_to_16": 97.0, "3_to_17": 97.0, "3_to_18": 101.0, "3_to_19": 101.0,
+    "4_to_5": 30.0, "4_to_6": 30.0, "4_to_7": 30.0, "4_to_8": 39.0, "4_to_9": 50.0, "4_to_10": 50.0, "4_to_11": 62.0, "4_to_12": 62.0, "4_to_13": 74.0, "4_to_14": 74.0, "4_to_15": 74.0, "4_to_16": 85.0, "4_to_17": 85.0, "4_to_18": 97.0, "4_to_19": 97.0,
+    "5_to_6": 30.0, "5_to_7": 30.0, "5_to_8": 39.0, "5_to_9": 50.0, "5_to_10": 50.0, "5_to_11": 62.0, "5_to_12": 62.0, "5_to_13": 74.0, "5_to_14": 74.0, "5_to_15": 74.0, "5_to_16": 85.0, "5_to_17": 85.0, "5_to_18": 97.0, "5_to_19": 97.0,
+    "6_to_7": 30.0, "6_to_8": 30.0, "6_to_9": 39.0, "6_to_10": 39.0, "6_to_11": 50.0, "6_to_12": 50.0, "6_to_13": 62.0, "6_to_14": 62.0, "6_to_15": 62.0, "6_to_16": 74.0, "6_to_17": 74.0, "6_to_18": 85.0, "6_to_19": 85.0,
+    "7_to_8": 30.0, "7_to_9": 39.0, "7_to_10": 39.0, "7_to_11": 50.0, "7_to_12": 50.0, "7_to_13": 62.0, "7_to_14": 62.0, "7_to_15": 62.0, "7_to_16": 74.0, "7_to_17": 74.0, "7_to_18": 85.0, "7_to_19": 85.0,
+    "8_to_9": 30.0, "8_to_10": 30.0, "8_to_11": 39.0, "8_to_12": 39.0, "8_to_13": 50.0, "8_to_14": 50.0, "8_to_15": 50.0, "8_to_16": 62.0, "8_to_17": 62.0, "8_to_18": 74.0, "8_to_19": 74.0,
+    "9_to_10": 30.0, "9_to_11": 30.0, "9_to_12": 30.0, "9_to_13": 39.0, "9_to_14": 39.0, "9_to_15": 39.0, "9_to_16": 50.0, "9_to_17": 50.0, "9_to_18": 62.0, "9_to_19": 62.0,
+    "10_to_11": 30.0, "10_to_12": 30.0, "10_to_13": 39.0, "10_to_14": 39.0, "10_to_15": 39.0, "10_to_16": 50.0, "10_to_17": 50.0, "10_to_18": 62.0, "10_to_19": 62.0,
+    "11_to_12": 30.0, "11_to_13": 30.0, "11_to_14": 30.0, "11_to_15": 30.0, "11_to_16": 39.0, "11_to_17": 39.0, "11_to_18": 50.0, "11_to_19": 50.0,
+    "12_to_13": 30.0, "12_to_14": 30.0, "12_to_15": 30.0, "12_to_16": 39.0, "12_to_17": 39.0, "12_to_18": 50.0, "12_to_19": 50.0,
+    "13_to_14": 30.0, "13_to_15": 30.0, "13_to_16": 30.0, "13_to_17": 30.0, "13_to_18": 39.0, "13_to_19": 39.0,
+    "14_to_15": 30.0, "14_to_16": 30.0, "14_to_17": 30.0, "14_to_18": 39.0, "14_to_19": 39.0,
+    "15_to_16": 30.0, "15_to_17": 30.0, "15_to_18": 39.0, "15_to_19": 39.0,
+    "16_to_17": 30.0, "16_to_18": 30.0, "16_to_19": 30.0,
+    "17_to_18": 30.0, "17_to_19": 30.0,
+    "18_to_19": 30.0
+  };
+
   @override
   void initState() {
     super.initState();
@@ -53,7 +76,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
     _markers.clear();
     _polylines.clear();
 
-    // Add boarding location marker
     _markers.add(
       Marker(
         markerId: const MarkerId('from'),
@@ -66,7 +88,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
       ),
     );
 
-    // Add destination marker
     _markers.add(
       Marker(
         markerId: const MarkerId('to'),
@@ -79,7 +100,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
       ),
     );
 
-    // Build polyline between selected stops
     final fromIndex = _allStops.indexOf(_selectedBoardingStop!);
     final toIndex = _allStops.indexOf(_selectedDestinationStop!);
     final startIdx = fromIndex < toIndex ? fromIndex : toIndex;
@@ -131,37 +151,14 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
     _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
-  double _calculateDistance() {
-    if (_selectedBoardingStop == null || _selectedDestinationStop == null) return 0;
+  double _calculateExactFareLocal(int startIdx, int endIdx) {
+    if (startIdx == endIdx) return 0.00;
 
-    final fromIndex = _allStops.indexOf(_selectedBoardingStop!);
-    final toIndex = _allStops.indexOf(_selectedDestinationStop!);
-    final startIdx = fromIndex < toIndex ? fromIndex : toIndex;
-    final endIdx = fromIndex < toIndex ? toIndex : fromIndex;
-    final stopsSegment = _allStops.sublist(startIdx, endIdx + 1);
+    int firstStage = math.min(startIdx, endIdx);
+    int secondStage = math.max(startIdx, endIdx);
+    String fareKey = "${firstStage}_to_${secondStage}";
 
-    if (stopsSegment.length < 2) return 0;
-
-    double totalDistance = 0;
-    for (int i = 0; i < stopsSegment.length - 1; i++) {
-      final stop1 = stopsSegment[i];
-      final stop2 = stopsSegment[i + 1];
-      
-      // Haversine formula for distance calculation
-      const double earthRadius = 6371; // km
-      final lat1 = stop1.latitude * pi / 180;
-      final lat2 = stop2.latitude * pi / 180;
-      final dLat = (stop2.latitude - stop1.latitude) * pi / 180;
-      final dLon = (stop2.longitude - stop1.longitude) * pi / 180;
-
-      final a = sin(dLat / 2) * sin(dLat / 2) +
-          cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
-      final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-      
-      totalDistance += earthRadius * c;
-    }
-
-    return totalDistance;
+    return _fareMatrix[fareKey] ?? 0.00;
   }
 
   Future<void> _calculateTicket() async {
@@ -191,6 +188,9 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
     });
 
     final predictionService = PredictionService();
+    final fromIdx = _allStops.indexOf(_selectedBoardingStop!);
+    final toIdx = _allStops.indexOf(_selectedDestinationStop!);
+
     final response = await predictionService.calculateFare(
       boardingStage: _selectedBoardingStop!.name,
       alightingStage: _selectedDestinationStop!.name,
@@ -207,10 +207,10 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
         _ticketResult = {
           'fare': (data['fare'] ?? 0).toDouble(),
           'currency': data['currency'] ?? 'LKR',
-          'route_number': data['route_number'] ?? '',
-          'route_name': data['route_name'] ?? '',
-          'service_type': data['service_type'] ?? '',
-          'stages_traveled': data['stages_traveled'] ?? 0,
+          'route_number': data['route_number'] ?? '177',
+          'route_name': data['route_name'] ?? 'Kaduwela - Kollupitiya',
+          'service_type': data['service_type'] ?? 'Normal',
+          'stages_traveled': data['stages_traveled'] ?? (toIdx - fromIdx).abs(),
           'boarding_stage': data['boarding_stage'] ?? _selectedBoardingStop!.name,
           'alighting_stage': data['alighting_stage'] ?? _selectedDestinationStop!.name,
           'boarding_stage_sinhala': data['boarding_stage_sinhala'] ?? '',
@@ -218,24 +218,15 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
         };
       });
     } else {
-      // Fallback to local calculation if API fails
-      final distance = _calculateDistance();
-      final fromIdx = _allStops.indexOf(_selectedBoardingStop!);
-      final toIdx = _allStops.indexOf(_selectedDestinationStop!);
-      double fare;
-      if (distance <= 2) {
-        fare = 30;
-      } else {
-        fare = 30 + ((distance - 2) * 10);
-      }
+      double exactFare = _calculateExactFareLocal(fromIdx, toIdx);
 
       setState(() {
         _showResult = true;
         _ticketResult = {
-          'fare': fare,
+          'fare': exactFare,
           'currency': 'LKR',
-          'route_number': '',
-          'route_name': _allStops.isNotEmpty ? 'Route 177: Kaduwela - Kollupitiya' : '',
+          'route_number': '177',
+          'route_name': _allStops.isNotEmpty ? 'Kaduwela - Kollupitiya' : '',
           'service_type': 'Normal',
           'stages_traveled': (toIdx - fromIdx).abs(),
           'boarding_stage': _selectedBoardingStop!.name,
@@ -260,7 +251,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
       ),
       child: Column(
         children: [
-          // Drag handle
           Container(
             margin: const EdgeInsets.only(top: 12),
             width: 40,
@@ -277,7 +267,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
                   Row(
                     children: [
                       Container(
@@ -320,7 +309,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                   const SizedBox(height: 24),
 
-                  // Boarding Location Dropdown
                   const Text(
                     'Boarding Location',
                     style: TextStyle(
@@ -382,7 +370,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                   const SizedBox(height: 20),
 
-                  // Destination Dropdown
                   const Text(
                     'Destination',
                     style: TextStyle(
@@ -444,7 +431,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                   const SizedBox(height: 20),
 
-                  // Route Info
                   if (_selectedBoardingStop != null && _selectedDestinationStop != null) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -473,7 +459,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                     const SizedBox(height: 20),
                   ],
 
-                  // Map Display
                   if (_selectedBoardingStop != null && _selectedDestinationStop != null) ...[
                     const Text(
                       'Journey Route',
@@ -523,7 +508,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                     const SizedBox(height: 20),
                   ],
 
-                  // Calculate Button
                   SizedBox(
                     width: double.infinity,
                     height: 54,
@@ -578,7 +562,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                     ),
                   ),
 
-                  // Results
                   if (_showResult && _ticketResult != null) ...[
                     const SizedBox(height: 24),
                     Container(
@@ -598,7 +581,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Header
                           Row(
                             children: [
                               Container(
@@ -627,7 +609,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                           const SizedBox(height: 20),
 
-                          // Fare Display
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(20),
@@ -659,7 +640,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                           const SizedBox(height: 16),
 
-                          // Route & Service Info
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -767,7 +747,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
 
                           const SizedBox(height: 16),
 
-                          // Journey Details
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -792,7 +771,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                // Boarding Stage
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -824,7 +802,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                                   ],
                                 ),
                                 const SizedBox(height: 8),
-                                // Arrow
                                 Padding(
                                   padding: const EdgeInsets.only(left: 8),
                                   child: Column(
@@ -835,7 +812,6 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                // Alighting Stage
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -881,5 +857,4 @@ class _TicketCalculatorModalState extends State<TicketCalculatorModal> {
       ),
     );
   }
-
 }

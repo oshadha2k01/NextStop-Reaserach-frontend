@@ -35,6 +35,7 @@ class _DriverContactModalState extends State<DriverContactModal> {
   bool _isLoadingLocation = true;
   String _locationText = 'Fetching your location...';
   String? _selectedMessage;
+  bool _isSending = false;
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
   BitmapDescriptor? _userIcon;
@@ -228,6 +229,8 @@ class _DriverContactModalState extends State<DriverContactModal> {
   }
 
   Future<void> _sendMessage() async {
+    if (_isSending) return;
+
     if (_selectedMessage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -249,10 +252,9 @@ class _DriverContactModalState extends State<DriverContactModal> {
       return;
     }
 
-    // Show loading state
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Notifying driver...'), duration: Duration(seconds: 1)),
-    );
+    setState(() {
+      _isSending = true;
+    });
 
     try {
       final url = Uri.parse(ApiConfig.notify);
@@ -289,8 +291,30 @@ class _DriverContactModalState extends State<DriverContactModal> {
       print('📨 Response Body: ${response.body}');
       
       if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        print('✅ SUCCESS: Message delivered to driver dashboard!');
+        final raw = jsonDecode(response.body);
+        final responseData = raw is Map<String, dynamic>
+            ? raw
+            : <String, dynamic>{};
+        final data = responseData['data'] is Map<String, dynamic>
+          ? responseData['data'] as Map<String, dynamic>
+          : <String, dynamic>{};
+
+        final bool deliveredToDriver =
+          responseData['driverDashboardReceived'] == true ||
+          responseData['deliveredToDriver'] == true ||
+          data['driverDashboardReceived'] == true ||
+          data['deliveredToDriver'] == true ||
+          (data['activeDriverConnections'] is num &&
+            (data['activeDriverConnections'] as num) > 0) ||
+          (data['notifiedDrivers'] is num &&
+            (data['notifiedDrivers'] as num) > 0) ||
+          _hasAnyDriverSocketSubscriber(data);
+
+        final emittedRoomsSummary = _emittedRoomsSummary(data);
+
+        print(deliveredToDriver
+          ? '✅ SUCCESS: Message delivered to driver dashboard!'
+          : '⚠️ WARNING: API accepted request, but no driver delivery confirmation in response.');
         print('📊 Distance: ${responseData['data']?['distance']}');
         print('⏱️  Estimated Time: ${responseData['data']?['estimatedTime']}');
         print('🚏 Stops Away: ${responseData['data']?['stopsAway']}');
@@ -301,17 +325,27 @@ class _DriverContactModalState extends State<DriverContactModal> {
         print('   3. Driver dashboard must listen for "passenger_boarding" event');
         print('   4. Backend resolves busId from deviceId: ${widget.busId}');
         print('═══════════════════════════════════════════════════');
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Success! Sent to driver: "$_selectedMessage"'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (mounted) Navigator.pop(context);
-        });
+
+        if (deliveredToDriver) {
+          await _showDeliveryStatusModal(
+            isSuccess: true,
+            title: 'Delivered to Driver Dashboard',
+            message:
+                'Your boarding message was received by the driver dashboard successfully.',
+          );
+
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        } else {
+          await _showDeliveryStatusModal(
+            isSuccess: false,
+            title: 'Delivery Not Confirmed',
+            message: emittedRoomsSummary.isEmpty
+                ? 'Message reached the server, but no active driver dashboard socket subscriber was found. Please ensure the driver app is connected and joined the correct bus room, then try again.'
+                : 'Message reached the server, but no active subscriber was found in $emittedRoomsSummary. Please ensure the driver app is connected and joined the correct room, then try again.',
+          );
+        }
       } else {
         print('❌ ERROR: Server returned status ${response.statusCode}');
         print('═══════════════════════════════════════════════════');
@@ -322,15 +356,107 @@ class _DriverContactModalState extends State<DriverContactModal> {
     } catch (e) {
       print('❌ EXCEPTION: ${e.toString()}');
       print('═══════════════════════════════════════════════════');
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to send: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+
+      await _showDeliveryStatusModal(
+        isSuccess: false,
+        title: 'Failed to Notify Driver',
+        message: e.toString(),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
     }
+  }
+
+  bool _hasAnyDriverSocketSubscriber(Map<String, dynamic> data) {
+    final emittedRooms = data['emittedRooms'];
+    if (emittedRooms is! List) return false;
+
+    for (final room in emittedRooms) {
+      if (room is Map) {
+        final subscribers = room['subscribers'];
+        if (subscribers is num && subscribers > 0) {
+          return true;
+        }
+        if (subscribers is String) {
+          final parsed = int.tryParse(subscribers);
+          if (parsed != null && parsed > 0) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  String _emittedRoomsSummary(Map<String, dynamic> data) {
+    final emittedRooms = data['emittedRooms'];
+    if (emittedRooms is! List) return '';
+
+    final labels = <String>[];
+    for (final room in emittedRooms) {
+      if (room is Map) {
+        final name = room['room']?.toString();
+        if (name != null && name.isNotEmpty) {
+          labels.add(name);
+        }
+      }
+    }
+
+    return labels.join(', ');
+  }
+
+  Future<void> _showDeliveryStatusModal({
+    required bool isSuccess,
+    required String title,
+    required String message,
+  }) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                isSuccess ? Icons.check_circle : Icons.error,
+                color: isSuccess ? Colors.green : Colors.red,
+                size: 26,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(isSuccess ? 'Done' : 'Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -570,11 +696,20 @@ class _DriverContactModalState extends State<DriverContactModal> {
                     width: double.infinity,
                     height: 54,
                     child: ElevatedButton.icon(
-                      onPressed: _sendMessage,
-                      icon: const Icon(Icons.send, color: Colors.white),
-                      label: const Text(
-                        'Send Message to Driver',
-                        style: TextStyle(
+                      onPressed: _isSending ? null : _sendMessage,
+                      icon: _isSending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.send, color: Colors.white),
+                      label: Text(
+                        _isSending ? 'Sending...' : 'Send Message to Driver',
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
