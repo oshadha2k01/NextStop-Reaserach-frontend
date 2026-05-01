@@ -82,13 +82,51 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Live bus update received: $data');
       
       if (mounted) {
+        final LatLng nextBusLocation = LatLng(data['lat'], data['lng']);
+
         setState(() {
-          liveBusLocation = LatLng(data['lat'], data['lng']);
+          liveBusLocation = nextBusLocation;
           busData = data;
+          _markers.removeWhere((marker) => marker.markerId.value == 'live_bus');
+          _markers.add(
+            Marker(
+              markerId: const MarkerId('live_bus'),
+              position: nextBusLocation,
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+              infoWindow: InfoWindow(
+                title: 'Bus ${data['busId'] ?? ''}',
+                snippet: 'Live location',
+              ),
+            ),
+          );
         });
         
         // Move the map camera to follow the bus automatically!
-        _moveCameraToBus(liveBusLocation!);
+        _moveCameraToBus(liveBusLocation);
+      }
+    });
+
+    socket!.on('bus_status_changed', (data) {
+      debugPrint('Bus status changed event received: $data');
+
+      final bool isActive = data['isActive'] == true;
+      if (!isActive && mounted) {
+        setState(() {
+          liveBusLocation = null;
+          busData = data;
+          _markers.removeWhere((marker) => marker.markerId.value == 'live_bus');
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red.shade700,
+            content: const Text(
+              'The bus has ended its trip and is currently offline.',
+              style: TextStyle(color: Colors.white),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
       }
     });
 
@@ -97,7 +135,8 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _moveCameraToBus(LatLng position) async {
+  Future<void> _moveCameraToBus(LatLng? position) async {
+    if (position == null || !_mapController.isCompleted) return;
     final GoogleMapController controller = await _mapController.future;
     controller.animateCamera(CameraUpdate.newLatLng(position));
   }
@@ -415,6 +454,9 @@ class _HomePageState extends State<HomePage> {
                                 markers: _markers,
                                 onMapCreated: (GoogleMapController controller) {
                                   _mapControllerBase = controller;
+                                  if (!_mapController.isCompleted) {
+                                    _mapController.complete(controller);
+                                  }
                                   if (_currentPosition != null) {
                                     controller.animateCamera(
                                       CameraUpdate.newCameraPosition(
