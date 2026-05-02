@@ -51,6 +51,26 @@ class _HomePageState extends State<HomePage> {
   io.Socket? socket;
   LatLng? liveBusLocation;
   Map<String, dynamic>? busData;
+  bool _isBusActive = false;
+
+  bool _parseBusActive(dynamic statusValue) {
+    if (statusValue == null) return false;
+    if (statusValue is bool) return statusValue;
+    if (statusValue is num) return statusValue != 0;
+    final String normalized = statusValue.toString().toLowerCase().trim();
+    return normalized == 'true' || normalized == '1' || normalized == 'active';
+  }
+
+  bool _hasBusActiveField(Map<String, dynamic> data) {
+    return data.containsKey('isActive') || data.containsKey('active') || data.containsKey('status');
+  }
+
+  bool _extractBusActive(Map<String, dynamic> data) {
+    if (data.containsKey('isActive')) return _parseBusActive(data['isActive']);
+    if (data.containsKey('active')) return _parseBusActive(data['active']);
+    if (data.containsKey('status')) return _parseBusActive(data['status']);
+    return _isBusActive;
+  }
 
   @override
   void initState() {
@@ -83,15 +103,83 @@ class _HomePageState extends State<HomePage> {
     socket!.on('bus_location_update', (data) {
       debugPrint('Live bus update received: $data');
       
-      if (mounted) {
-        setState(() {
-          liveBusLocation = LatLng(data['lat'], data['lng']);
-          busData = data;
-        });
-        
-        // Move the map camera to follow the bus automatically!
-        _moveCameraToBus(liveBusLocation!);
+      if (!mounted) return;
+      final LatLng nextBusLocation = LatLng(data['lat'], data['lng']);
+      final bool isActive = _hasBusActiveField(data) ? _extractBusActive(data) : _isBusActive;
+
+      if (!_hasBusActiveField(data) && !_isBusActive) {
+        debugPrint('Ignoring location update because bus is currently inactive.');
+        return;
       }
+
+      setState(() {
+        liveBusLocation = nextBusLocation;
+        busData = data;
+        _isBusActive = isActive;
+        _markers.removeWhere((marker) => marker.markerId.value == 'live_bus');
+
+        if (_isBusActive) {
+          _markers.add(
+            Marker(
+              markerId: const MarkerId('live_bus'),
+              position: nextBusLocation,
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+              infoWindow: InfoWindow(
+                title: 'Bus ${data['busId'] ?? ''}',
+                snippet: 'Live location',
+              ),
+            ),
+          );
+        }
+      });
+
+      if (_isBusActive) {
+        _moveCameraToBus(liveBusLocation);
+      }
+    });
+
+    socket!.on('bus_status_changed', (data) {
+      debugPrint('Bus status changed event received: $data');
+
+      final bool isActive = _extractBusActive(data);
+      if (!mounted) return;
+
+      setState(() {
+        final bool wasActive = _isBusActive;
+        _isBusActive = isActive;
+        busData = data;
+
+        if (!_isBusActive) {
+          liveBusLocation = null;
+          _markers.removeWhere((marker) => marker.markerId.value == 'live_bus');
+        } else if (liveBusLocation != null) {
+          _markers.removeWhere((marker) => marker.markerId.value == 'live_bus');
+          _markers.add(
+            Marker(
+              markerId: const MarkerId('live_bus'),
+              position: liveBusLocation!,
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+              infoWindow: InfoWindow(
+                title: 'Bus ${data['busId'] ?? ''}',
+                snippet: 'Live location',
+              ),
+            ),
+          );
+        }
+
+        if (wasActive && !_isBusActive) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.red.shade700,
+              content: const Text(
+                'The bus has ended its trip and is currently offline.',
+                style: TextStyle(color: Colors.white),
+              ),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      });
     });
 
     socket!.onDisconnect((_) {
@@ -99,7 +187,8 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _moveCameraToBus(LatLng position) async {
+  Future<void> _moveCameraToBus(LatLng? position) async {
+    if (position == null || !_mapController.isCompleted) return;
     final GoogleMapController controller = await _mapController.future;
     controller.animateCamera(CameraUpdate.newLatLng(position));
   }
@@ -417,6 +506,9 @@ class _HomePageState extends State<HomePage> {
                                 markers: _markers,
                                 onMapCreated: (GoogleMapController controller) {
                                   _mapControllerBase = controller;
+                                  if (!_mapController.isCompleted) {
+                                    _mapController.complete(controller);
+                                  }
                                   if (_currentPosition != null) {
                                     controller.animateCamera(
                                       CameraUpdate.newCameraPosition(
