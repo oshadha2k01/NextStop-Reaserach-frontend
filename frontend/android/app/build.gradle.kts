@@ -19,7 +19,7 @@ val googleMapsApiKey = envProperties.getProperty("GOOGLE_MAPS_API_KEY")
     ?: throw GradleException("GOOGLE_MAPS_API_KEY not found in .env")
 
 android {
-    namespace = "com.example.frontend"
+    namespace = "com.nextstop.passenger"
     // Use explicit modern compile SDK to avoid old build-tools resolution
     compileSdk = 36
     // Explicit buildToolsVersion ensures Gradle doesn't request legacy 25.x tools
