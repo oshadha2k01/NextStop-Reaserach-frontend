@@ -9,7 +9,7 @@ import '../screens/modals/crowd_prediction_modal.dart';
 import '../screens/modals/ticket_calculator_modal.dart';
 import '../screens/routes/all_routes_screen.dart';
 import '../screens/modals/feedback_modal.dart';
-import '../screens/live/live_tracking_screen.dart';
+// Live tracking removed: keep file tidy by not importing unused screen.
 import '../services/location_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../core/theme/app_colors.dart';
@@ -460,8 +460,6 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           _buildMenuSquare(Icons.directions_bus, "Bus"),
                           const SizedBox(width: 15),
-                          _buildMenuSquare(Icons.navigation, "Live"),
-                          const SizedBox(width: 15),
                           _buildMenuSquare(Icons.auto_graph, "Predict"),
                           const SizedBox(width: 15),
                           _buildMenuSquare(Icons.schedule, "Schedule"),
@@ -583,13 +581,6 @@ class _HomePageState extends State<HomePage> {
             context,
             MaterialPageRoute(
               builder: (context) => const RealTimeBusScreen(),
-            ),
-          );
-        } else if (label == "Live") {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const LiveTrackingScreen(),
             ),
           );
         } else if (label == "Predict") {
