@@ -1,4 +1,4 @@
-package com.example.frontend
+package com.nextstop.passenger
 
 import io.flutter.embedding.android.FlutterActivity
 
