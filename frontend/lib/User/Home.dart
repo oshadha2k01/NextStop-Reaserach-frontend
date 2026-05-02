@@ -13,6 +13,8 @@ import '../screens/live/live_tracking_screen.dart';
 import '../services/location_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../core/theme/app_colors.dart';
+import '../services/national_route_service.dart';
+import '../models/bus_stop.dart';
 
 void main() {
   runApp(const MyApp());
@@ -693,6 +695,15 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
   bool _toHasError = false;
   String _fromErrorMessage = '';
   String _toErrorMessage = '';
+  bool _isLoading = false;
+  final NationalRouteService _routeService = NationalRouteService();
+
+  double _parseCoord(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
+  }
 
   @override
   void dispose() {
@@ -710,46 +721,26 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
     });
   }
 
-  void _searchRoute() {
+  Future<void> _searchRoute() async {
     _clearErrors();
     final from = _fromController.text.trim();
     final to = _toController.text.trim();
 
-    // Validation 1: Check if fields are empty
-    if (from.isEmpty && to.isEmpty) {
+    // Validation: Check if fields are empty
+    if (from.isEmpty || to.isEmpty) {
       setState(() {
-        _fromHasError = true;
-        _toHasError = true;
-        _fromErrorMessage = 'Starting location is required';
-        _toErrorMessage = 'Destination is required';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter both starting point and destination'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    if (from.isEmpty) {
-      setState(() {
-        _fromHasError = true;
-        _fromErrorMessage = 'Please enter starting location';
+        if (from.isEmpty) {
+          _fromHasError = true;
+          _fromErrorMessage = 'Starting location is required';
+        }
+        if (to.isEmpty) {
+          _toHasError = true;
+          _toErrorMessage = 'Destination is required';
+        }
       });
       return;
     }
 
-    if (to.isEmpty) {
-      setState(() {
-        _toHasError = true;
-        _toErrorMessage = 'Please enter destination';
-      });
-      return;
-    }
-
-    // Validation 2: Check if same location
     if (from.toLowerCase() == to.toLowerCase()) {
       setState(() {
         _fromHasError = true;
@@ -757,120 +748,80 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
         _fromErrorMessage = 'Cannot be the same';
         _toErrorMessage = 'Cannot be the same';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Starting point and destination cannot be the same'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ),
-      );
       return;
     }
 
-    // Validation 3: Check minimum length
-    if (from.length < 3) {
-      setState(() {
-        _fromHasError = true;
-        _fromErrorMessage = 'Enter at least 3 characters';
-      });
-      return;
-    }
+    setState(() => _isLoading = true);
 
-    if (to.length < 3) {
-      setState(() {
-        _toHasError = true;
-        _toErrorMessage = 'Enter at least 3 characters';
-      });
-      return;
-    }
-    
-    // Search for routes
-    final routes = BusRouteModel.searchRoutes(from, to);
-    
-    // Validation 4: Check if route exists
-    if (routes.isEmpty) {
-      // Check if locations exist in any route
-      final allRoutes = BusRouteModel.getAllRoutes();
-      bool fromExists = false;
-      bool toExists = false;
+    try {
+      // Search for routes using the Backend Service
+      final routesData = await _routeService.searchRoute(from, to);
+      
+      if (!mounted) return;
 
-      for (var route in allRoutes) {
-        for (var stop in route.stops) {
-          if (stop.name.toLowerCase().contains(from.toLowerCase())) {
-            fromExists = true;
-          }
-          if (stop.name.toLowerCase().contains(to.toLowerCase())) {
-            toExists = true;
-          }
+      if (routesData.isNotEmpty) {
+        final routeJson = routesData.first;
+        final stages = (routeJson['stages'] as List<dynamic>?) ?? [];
+        
+        if (stages.isEmpty) {
+          setState(() {
+            _fromHasError = true;
+            _toHasError = true;
+            _fromErrorMessage = 'No path found';
+            _toErrorMessage = 'No path found';
+            _isLoading = false;
+          });
+          return;
         }
-      }
 
-      // Specific error messages based on what's wrong
-      if (!fromExists && !toExists) {
-        setState(() {
-          _fromHasError = true;
-          _toHasError = true;
-          _fromErrorMessage = 'Location not found';
-          _toErrorMessage = 'Location not found';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Both "$from" and "$to" are not available in our routes'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
+        // Map Backend JSON to BusRouteModel
+        final List<BusStop> busStops = stages.map((s) {
+          final coords = s['coordinates'] ?? {};
+          return BusStop(
+            name: s['name'] ?? 'Stop',
+            latitude: _parseCoord(coords['latitude'] ?? coords['lat']),
+            longitude: _parseCoord(coords['longitude'] ?? coords['lng'] ?? coords['lon']),
+          );
+        }).toList();
+
+        final BusRouteModel routeModel = BusRouteModel(
+          id: routeJson['_id']?.toString(),
+          routeName: routeJson['route_name'] ?? routeJson['name'] ?? 'Custom Route',
+          routeNumber: routeJson['route_number']?.toString(),
+          stops: busStops,
         );
-      } else if (!fromExists) {
-        setState(() {
-          _fromHasError = true;
-          _fromErrorMessage = 'Location not found';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('"$from" is not available in our routes.\nCheck spelling or try nearby locations'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      } else if (!toExists) {
-        setState(() {
-          _toHasError = true;
-          _toErrorMessage = 'Location not found';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('"$to" is not available in our routes.\nCheck spelling or try nearby locations'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+
+        Navigator.pop(context);
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => RouteMapScreen(route: routeModel),
           ),
         );
       } else {
-        // Both locations exist but no connecting route
+        // No routes found in backend
         setState(() {
           _fromHasError = true;
           _toHasError = true;
-          _fromErrorMessage = 'No direct route';
-          _toErrorMessage = 'No direct route';
+          _fromErrorMessage = 'Location not found';
+          _toErrorMessage = 'Location not found';
+          _isLoading = false;
         });
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('No direct bus route found from "$from" to "$to".\nTry reversing the direction or check alternative routes'),
+          const SnackBar(
+            content: Text('No bus routes found for these locations in the database.'),
             backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 4),
           ),
         );
       }
-      return;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Search Error: $e'), backgroundColor: Colors.red),
+      );
     }
-    
-    // Success - Navigate to route map screen
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => RouteMapScreen(route: routes.first),
-      ),
-    );
   }
 
   @override
@@ -1047,7 +998,7 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
               width: double.infinity,
               height: 54,
               child: ElevatedButton(
-                onPressed: _searchRoute,
+                onPressed: _isLoading ? null : _searchRoute,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   shape: RoundedRectangleBorder(
@@ -1055,14 +1006,16 @@ class _RouteSearchModalState extends State<RouteSearchModal> {
                   ),
                   elevation: 2,
                 ),
-                child: const Text(
-                  'Search',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
+                child: _isLoading 
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text(
+                      'Search',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
               ),
             ),
           ),

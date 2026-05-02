@@ -15,6 +15,12 @@ class ApiConfig {
 
   // Route endpoints
   static const String routes = '$baseUrl/routes';
+  
+  // National routes (map/search/list) endpoints
+  static const String nationalRoutesBase = '$baseUrl/national-routes';
+  static const String nationalRoutesSearch = '$nationalRoutesBase/search';
+  static const String nationalRoutesFilter = '$nationalRoutesBase/filter';
+  static const String nationalRouteById = '$nationalRoutesBase/';
 
   // Bus endpoints
   static const String buses = '$baseUrl/buses';
