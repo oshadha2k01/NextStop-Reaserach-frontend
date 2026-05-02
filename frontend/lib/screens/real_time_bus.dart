@@ -223,21 +223,6 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       );
     }
 
-    // Add route polyline
-    final routePoints = _selectedRoute!.stops
-        .map((stop) => LatLng(stop.latitude, stop.longitude))
-        .toList();
-    
-    _polylines.add(
-      Polyline(
-        polylineId: const PolylineId('route'),
-        points: routePoints,
-        color: primaryColor,
-        width: 6,
-        patterns: [PatternItem.dash(30), PatternItem.gap(15)],
-      ),
-    );
-
     if (_currentDevicePosition != null) {
       _updateDeviceAndBusMarkers(_currentDevicePosition!);
     }
@@ -260,7 +245,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       _markers.add(
         Marker(
           markerId: const MarkerId('user_location_pin'),
-          position: LatLng(position.latitude, position.longitude),
+          position: LatLng(position.latitude , position.longitude),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
           infoWindow: const InfoWindow(title: 'Your Location'),
           zIndex: 1, // Keep it under the bus icon
@@ -272,7 +257,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
         _markers.add(
           Marker(
             markerId: const MarkerId('device_live_bus'),
-            position: LatLng(position.latitude + 0.0005, position.longitude + 0.0005), 
+            position: LatLng(position.latitude, position.longitude),
             icon: _busIcon!,
             anchor: const Offset(0.5, 0.5),
             zIndex: 10, // Keep it on top of the user pin
