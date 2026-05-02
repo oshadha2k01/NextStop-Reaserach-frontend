@@ -9,6 +9,7 @@ import '../screens/modals/crowd_prediction_modal.dart';
 import '../screens/modals/ticket_calculator_modal.dart';
 import '../screens/routes/all_routes_screen.dart';
 import '../screens/modals/feedback_modal.dart';
+import '../screens/modals/complaint_modal.dart';
 // Live tracking removed: keep file tidy by not importing unused screen.
 import '../services/location_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -460,6 +461,8 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           _buildMenuSquare(Icons.directions_bus, "Bus"),
                           const SizedBox(width: 15),
+                          _buildMenuSquare(Icons.report_problem, "Complaint"),
+                          const SizedBox(width: 15),
                           _buildMenuSquare(Icons.auto_graph, "Predict"),
                           const SizedBox(width: 15),
                           _buildMenuSquare(Icons.schedule, "Schedule"),
@@ -581,6 +584,15 @@ class _HomePageState extends State<HomePage> {
             context,
             MaterialPageRoute(
               builder: (context) => const RealTimeBusScreen(),
+            ),
+          );
+        } else if (label == "Complaint") {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => ComplaintModal(
+              busId: 'NA-1234',
             ),
           );
         } else if (label == "Predict") {

@@ -272,7 +272,7 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
         _markers.add(
           Marker(
             markerId: const MarkerId('device_live_bus'),
-            position: LatLng(position.latitude, position.longitude),
+            position: LatLng(position.latitude + 0.0005, position.longitude + 0.0005), 
             icon: _busIcon!,
             anchor: const Offset(0.5, 0.5),
             zIndex: 10, // Keep it on top of the user pin
