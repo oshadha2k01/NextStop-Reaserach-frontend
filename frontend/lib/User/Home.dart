@@ -461,8 +461,6 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           _buildMenuSquare(Icons.directions_bus, "Bus"),
                           const SizedBox(width: 15),
-                          _buildMenuSquare(Icons.report_problem, "Complaint"),
-                          const SizedBox(width: 15),
                           _buildMenuSquare(Icons.auto_graph, "Predict"),
                           const SizedBox(width: 15),
                           _buildMenuSquare(Icons.schedule, "Schedule"),
@@ -472,6 +470,8 @@ class _HomePageState extends State<HomePage> {
                           _buildMenuSquare(Icons.map, "Route"),
                           const SizedBox(width: 15),
                           _buildMenuSquare(Icons.feedback_outlined, "Feedback"),
+                          const SizedBox(width: 15),
+                          _buildMenuSquare(Icons.report_problem, "Complaint"),
                         ],
                       ),
                     ),
