@@ -10,6 +10,7 @@ import 'features/home/presentation/screens/home_page.dart';
 import 'screens/shared/success_page.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
