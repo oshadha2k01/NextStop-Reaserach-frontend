@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
@@ -6,9 +7,11 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
+import '../config/api_config.dart';
 import '../models/bus_route_model.dart';
 import '../models/bus_stop.dart';
 import '../models/people_count_model.dart';
+import '../services/api_service.dart';
 import '../services/socket_service.dart';
 import 'prediction_modal.dart';
 import 'driver_contact_modal.dart';
@@ -50,33 +53,46 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
   
   Map<String, List<BusData>> _busData = {};
   
-  // LIVE GPS TRACKING VARIABLES
+  // LIVE BUS TRACKING VARIABLES
+  LatLng? _busLocation;
+  double _busSpeedMps = 0;
+  String _busId = 'ESP32_WROOM_DA_01';
+  BitmapDescriptor? _busIcon;
+  final ApiService _apiService = ApiService();
+  Timer? _sensorPollTimer;
+  
+  // Optional user location tracking (used for ETA query fallback and map context)
   Position? _currentDevicePosition;
   StreamSubscription<Position>? _positionStream;
-  BitmapDescriptor? _busIcon;
 
   @override
   void initState() {
     super.initState();
-    _createBusIcon();
+    _initializeTracking();
+  }
+
+  Future<void> _initializeTracking() async {
+    await _createBusIcon();
     _allRoutes = BusRouteModel.getAllRoutes();
     print('Loaded ${_allRoutes.length} routes'); // DEBUG
     if (_allRoutes.isNotEmpty) {
       _selectedRoute = _allRoutes[0];
       print('Selected route: ${_selectedRoute!.routeName}'); // DEBUG
       _updateMapForRoute();
-      // CONNECT TO BACKEND SOCKET
+      _startTrackingDeviceLocation();
       _connectBusSocket();
+      _startSensorPolling();
     } else {
       print('ERROR: No routes available!'); // DEBUG
     }
-    // Start tracking the phone
-    _startTrackingDeviceAsBus();
+    // Do not use the phone's GPS as the bus marker location.
+    // The bus marker will follow the IoT device location from sensor readings.
   }
 
   @override
   void dispose() {
     _positionStream?.cancel();
+    _sensorPollTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
@@ -86,30 +102,48 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     await socketService.connect();
 
     socketService.on('bus-location-update', (data) {
-      if (data == null || !mounted || _selectedRoute == null) return;
+      if (data == null || !mounted) return;
 
-      final busId = data['busNumber'] ?? data['busId'] ?? '';
-      final lat = (data['latitude'] ?? 0).toDouble();
-      final lng = (data['longitude'] ?? 0).toDouble();
+      final busId = data['device_id'] ?? data['deviceId'] ?? data['busNumber'] ?? data['busId'] ?? _busId;
+      double lat = 0.0;
+      double lng = 0.0;
+      double speed = 0.0;
 
-      final buses = _busData[_selectedRoute!.routeName];
-      if (buses != null) {
-        final busIndex = buses.indexWhere((b) => b.busId == busId);
-        if (busIndex >= 0) {
-          setState(() {
-            buses[busIndex].position = LatLng(lat, lng);
-            // REPLACED BROKEN CALL WITH THE CORRECT RENDER METHOD
-            if (_currentDevicePosition != null) {
-              _updateDeviceAndBusMarkers(_currentDevicePosition!);
-            }
-          });
+      if (data is Map && data.containsKey('gps')) {
+        final gps = data['gps'];
+        if (gps is Map) {
+          final latValue = gps['lat'] ?? gps['latitude'] ?? 0;
+          final lngValue = gps['lng'] ?? gps['longitude'] ?? 0;
+          final speedValue = gps['speed_kmh'] ?? gps['speed'] ?? 0;
+
+          lat = latValue is num ? latValue.toDouble() : double.tryParse(latValue.toString()) ?? 0.0;
+          lng = lngValue is num ? lngValue.toDouble() : double.tryParse(lngValue.toString()) ?? 0.0;
+          speed = speedValue is num ? speedValue.toDouble() : double.tryParse(speedValue.toString()) ?? 0.0;
         }
       }
+
+      if (lat == 0.0 && lng == 0.0) {
+        final latValue = data['latitude'] ?? data['lat'] ?? 0;
+        final lngValue = data['longitude'] ?? data['lng'] ?? 0;
+        final speedValue = data['speed'] ?? data['velocity'] ?? 0;
+
+        lat = latValue is num ? latValue.toDouble() : double.tryParse(latValue.toString()) ?? 0.0;
+        lng = lngValue is num ? lngValue.toDouble() : double.tryParse(lngValue.toString()) ?? 0.0;
+        speed = speedValue is num ? speedValue.toDouble() : double.tryParse(speedValue.toString()) ?? 0.0;
+      }
+
+      if (lat == 0.0 && lng == 0.0) return;
+
+      _busId = busId.toString();
+      _busSpeedMps = speed;
+      _busLocation = LatLng(lat, lng);
+
+      _updateBusMarker(_busLocation!);
     });
   }
 
-  // Gets device location and speed
-  Future<void> _startTrackingDeviceAsBus() async {
+  // Optional user location tracking helper.
+  Future<void> _startTrackingDeviceLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
 
@@ -119,26 +153,87 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       if (permission == LocationPermission.denied) return;
     }
 
-    // Get initial position
-    Position initialPosition = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    final initialPosition = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
     if (mounted) {
-      _updateDeviceAndBusMarkers(initialPosition);
-      // Center the camera on the user's first location
-      _mapController?.animateCamera(CameraUpdate.newLatLngZoom(
-        LatLng(initialPosition.latitude, initialPosition.longitude), 15));
+      _updateUserLocationMarker(initialPosition);
     }
 
-    // Listen to location changes continuously
     _positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 5, // Update every 5 meters
+        distanceFilter: 5,
       ),
-    ).listen((Position position) {
+    ).listen((position) {
       if (mounted) {
-        _updateDeviceAndBusMarkers(position);
+        _updateUserLocationMarker(position);
       }
     });
+  }
+
+  void _startSensorPolling() {
+    _sensorPollTimer?.cancel();
+    _sensorPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _pollLatestSensorLocation();
+    });
+    _pollLatestSensorLocation();
+  }
+
+  Future<void> _pollLatestSensorLocation() async {
+    try {
+      final fallbackLocation = _selectedRoute != null && _selectedRoute!.stops.isNotEmpty
+          ? LatLng(_selectedRoute!.stops.first.latitude, _selectedRoute!.stops.first.longitude)
+          : const LatLng(6.9271, 79.8612);
+
+      final userLat = (_currentDevicePosition?.latitude ?? fallbackLocation.latitude).toString();
+      final userLng = (_currentDevicePosition?.longitude ?? fallbackLocation.longitude).toString();
+
+      final response = await _apiService.get(
+        '${ApiConfig.baseUrl}/eta',
+        queryParams: {
+          'busId': _busId,
+          'userLat': userLat,
+          'userLng': userLng,
+        },
+      );
+
+      if (!mounted) return;
+      if (!response.success || response.data == null) {
+        debugPrint('Backend eta polling failed: ${response.errorMessage}');
+        return;
+      }
+
+      final data = response.data!;
+      final busLocation = data['bus_location'];
+      if (busLocation == null) {
+        debugPrint('Backend response did not include bus_location.');
+        return;
+      }
+
+      final lat = _toDouble(busLocation['lat']);
+      final lng = _toDouble(busLocation['lng']);
+      final speed = _toDouble(data['live_status']?['speed_kmh']) ?? _busSpeedMps;
+
+      if (lat == null || lng == null) {
+        debugPrint('Invalid bus_location coordinates from backend: $busLocation');
+        return;
+      }
+
+      _busLocation = LatLng(lat, lng);
+      _busSpeedMps = speed / 3.6;
+      _updateBusMarker(_busLocation!);
+
+      if (_mapController != null) {
+        _mapController!.animateCamera(CameraUpdate.newLatLng(_busLocation!));
+      }
+    } catch (e) {
+      debugPrint('Error polling backend ETA for live location: $e');
+    }
+  }
+
+  double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 
   // Your custom bus drawing
@@ -188,9 +283,10 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     final uint8List = byteData!.buffer.asUint8List();
     
     _busIcon = BitmapDescriptor.fromBytes(uint8List);
-    
-    if (_currentDevicePosition != null) {
-      _updateDeviceAndBusMarkers(_currentDevicePosition!);
+    debugPrint('Bus icon created.');
+
+    if (_busLocation != null) {
+      _updateBusMarker(_busLocation!);
     } else {
       setState(() {});
     }
@@ -223,8 +319,8 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
       );
     }
 
-    if (_currentDevicePosition != null) {
-      _updateDeviceAndBusMarkers(_currentDevicePosition!);
+    if (_busLocation != null) {
+      _updateBusMarker(_busLocation!);
     }
 
     if (_mapController != null && _selectedRoute!.stops.isNotEmpty) {
@@ -232,54 +328,54 @@ class _RealTimeBusScreenState extends State<RealTimeBusScreen> {
     }
   }
 
-  void _updateDeviceAndBusMarkers(Position position) {
+  void _updateUserLocationMarker(Position position) {
     _currentDevicePosition = position;
-    
-    setState(() {
-      // Remove old markers
-      _markers.removeWhere((marker) => 
-        marker.markerId.value == 'device_live_bus' || 
-        marker.markerId.value == 'user_location_pin');
 
-      // 1. ADD THE USER LOCATION PIN
+    setState(() {
+      _markers.removeWhere((marker) => marker.markerId.value == 'user_location_pin');
+
       _markers.add(
         Marker(
           markerId: const MarkerId('user_location_pin'),
-          position: LatLng(position.latitude , position.longitude),
+          position: LatLng(position.latitude, position.longitude),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
           infoWindow: const InfoWindow(title: 'Your Location'),
-          zIndex: 1, // Keep it under the bus icon
+          zIndex: 1,
         ),
       );
+    });
+  }
 
-      // 2. ADD THE CUSTOM BUS ICON
-      if (_busIcon != null) {
-        _markers.add(
-          Marker(
-            markerId: const MarkerId('device_live_bus'),
-            position: LatLng(position.latitude, position.longitude),
-            icon: _busIcon!,
-            anchor: const Offset(0.5, 0.5),
-            zIndex: 10, // Keep it on top of the user pin
-            onTap: () {
-              // Open modal when the bus is tapped
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (context) => DeviceBusLiveDetailsModal(
-                  latitude: position.latitude,
-                  longitude: position.longitude,
-                  speedInMps: position.speed,
-                  busId: 'ESP32_WROOM_DA_01',
-                  allStops: _selectedRoute!.stops,
-                  currentLocation: 'Kaduwela Bus Stand',
-                ),
-              );
-            },
-          ),
-        );
-      }
+  void _updateBusMarker(LatLng position) {
+    _busLocation = position;
+    if (_busIcon == null) return;
+
+    setState(() {
+      _markers.removeWhere((marker) => marker.markerId.value == 'device_live_bus');
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('device_live_bus'),
+          position: position,
+          icon: _busIcon!,
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 10,
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (context) => DeviceBusLiveDetailsModal(
+                latitude: position.latitude,
+                longitude: position.longitude,
+                speedInMps: _busSpeedMps,
+                busId: _busId,
+                allStops: _selectedRoute?.stops ?? [],
+                currentLocation: 'ESP32 Bus Device',
+              ),
+            );
+          },
+        ),
+      );
     });
   }
 
@@ -640,7 +736,7 @@ class _DeviceBusLiveDetailsModalState extends State<DeviceBusLiveDetailsModal> {
     });
 
     try {
-      final url = 'https://smartbusstop.me/backend/api/eta?busId=ESP32_WROOM_DA_01&userLat=${widget.latitude}&userLng=${widget.longitude}';
+      final url = '${ApiConfig.iotEta}?busId=ESP32_WROOM_DA_01&userLat=${widget.latitude}&userLng=${widget.longitude}';
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {

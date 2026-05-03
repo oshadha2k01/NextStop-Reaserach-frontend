@@ -15,6 +15,7 @@ class ApiConfig {
 
   // Route endpoints
   static const String routes = '$baseUrl/routes';
+  static const String iotEta = '$baseUrl/eta';
   
   // National routes (map/search/list) endpoints
   static const String nationalRoutesBase = '$baseUrl/national-routes';
