@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/bus_route_model.dart';
+import '../services/api_service.dart';
 
 class FeedbackModal extends StatefulWidget {
   const FeedbackModal({super.key});
@@ -63,24 +63,63 @@ class _FeedbackModalState extends State<FeedbackModal> {
       _isSubmitting = true;
     });
 
-    // TODO: Add server integration when backend is ready
-    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      // Send feedback to backend: feedbackRoutes.js → feedbackController.js
+      final feedbackData = {
+        'busId': _busId,
+        'busName': _busName,
+        'route': _currentRoute,
+        'routeRating': _routeRating,
+        'routeFeedback': _routeFeedbackController.text.trim(),
+        'appRating': _appRating,
+        'appFeedback': _appFeedbackController.text.trim(),
+        'busConditionRating': _busConditionRating,
+        'driverRating': _driverRating,
+        'driverFeedback': _driverFeedbackController.text.trim(),
+        'suggestions': _suggestionController.text.trim(),
+        'submittedAt': DateTime.now().toIso8601String(),
+      };
 
-    setState(() {
-      _isSubmitting = false;
-    });
+      final resp = await ApiService().post('/api/feedback', body: feedbackData);
 
-    // Show result message
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Thank you! Your feedback has been saved locally.'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        if (resp.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Thank you! Your feedback has been sent successfully.\nIt will appear in the Super Admin panel.'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 4),
+            ),
+          );
 
-      Navigator.pop(context);
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) Navigator.pop(context);
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error sending feedback: ${resp.errorMessage ?? 'Unknown error'}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error sending feedback: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 

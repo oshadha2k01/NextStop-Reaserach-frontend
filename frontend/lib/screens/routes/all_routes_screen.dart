@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../services/national_route_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../modals/route_search_modal.dart';
 
 class AllRoutesScreen extends StatefulWidget {
 	const AllRoutesScreen({super.key});
@@ -130,6 +131,17 @@ class _AllRoutesScreenState extends State<AllRoutesScreen> {
 										),
 									),
 									const Spacer(),
+									IconButton(
+										icon: const Icon(Icons.search, color: Colors.white),
+										onPressed: () {
+											showModalBottomSheet(
+												context: context,
+												isScrollControlled: true,
+												backgroundColor: Colors.transparent,
+												builder: (context) => const RouteSearchModal(),
+											);
+										},
+									),
 									const Column(
 										crossAxisAlignment: CrossAxisAlignment.end,
 										children: [
@@ -316,7 +328,10 @@ class _RouteMapBottomSheetState extends State<RouteMapBottomSheet> {
 	double? _parseCoord(dynamic value) {
 		if (value == null) return null;
 		if (value is num) return value.toDouble();
-		if (value is String) return double.tryParse(value);
+		if (value is String) {
+      final cleaned = value.replaceAll(RegExp(r'[^\d.-]'), '');
+      return double.tryParse(cleaned);
+    }
 		return null;
 	}
 
@@ -396,6 +411,9 @@ class _RouteMapBottomSheetState extends State<RouteMapBottomSheet> {
 		} catch (e) {
 			if (!mounted) return;
 			setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load route: $e')),
+      );
 		}
 	}
 
@@ -457,7 +475,19 @@ class _RouteMapBottomSheetState extends State<RouteMapBottomSheet> {
 					Expanded(
 						child: _isLoading
 								? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-								: ClipRRect(
+								: _polylines.isEmpty || _polylines.first.points.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.map_outlined, size: 64, color: Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          const Text('No map data available for this route.', 
+                            style: TextStyle(color: Colors.grey)),
+                        ],
+                      ),
+                    )
+                  : ClipRRect(
 										borderRadius:
 												const BorderRadius.vertical(top: Radius.circular(16)),
 										child: GoogleMap(

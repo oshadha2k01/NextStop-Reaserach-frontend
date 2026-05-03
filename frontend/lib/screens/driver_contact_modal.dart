@@ -42,8 +42,8 @@ class _DriverContactModalState extends State<DriverContactModal> {
 
   final List<String> _quickMessages = [
     'I want to board this bus',
-    'Please wait, I\'m coming',
-    'Thank you for waiting',
+    // 'Please wait, I\'m coming',
+    // 'Thank you for waiting',
   ];
 
   @override

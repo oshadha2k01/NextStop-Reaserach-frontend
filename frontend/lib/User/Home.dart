@@ -9,6 +9,8 @@ import '../screens/modals/crowd_prediction_modal.dart';
 import '../screens/modals/ticket_calculator_modal.dart';
 import '../screens/routes/all_routes_screen.dart';
 import '../screens/modals/feedback_modal.dart';
+import '../screens/modals/complaint_modal.dart';
+import '../screens/modals/route_search_modal.dart';
 // Live tracking removed: keep file tidy by not importing unused screen.
 import '../services/location_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -469,6 +471,8 @@ class _HomePageState extends State<HomePage> {
                           _buildMenuSquare(Icons.map, "Route"),
                           const SizedBox(width: 15),
                           _buildMenuSquare(Icons.feedback_outlined, "Feedback"),
+                          const SizedBox(width: 15),
+                          _buildMenuSquare(Icons.report_problem, "Complaint"),
                         ],
                       ),
                     ),
@@ -583,6 +587,15 @@ class _HomePageState extends State<HomePage> {
               builder: (context) => const RealTimeBusScreen(),
             ),
           );
+        } else if (label == "Complaint") {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => ComplaintModal(
+              busId: 'NA-1234',
+            ),
+          );
         } else if (label == "Predict") {
           showModalBottomSheet(
             context: context,
@@ -667,353 +680,4 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-
-// New Route Search Modal Widget
-class RouteSearchModal extends StatefulWidget {
-  const RouteSearchModal({super.key});
-
-  @override
-  State<RouteSearchModal> createState() => _RouteSearchModalState();
-}
-
-class _RouteSearchModalState extends State<RouteSearchModal> {
-  final TextEditingController _fromController = TextEditingController();
-  final TextEditingController _toController = TextEditingController();
-  static const Color primaryColor = AppColors.primary;
-  static const Color textPrimary = AppColors.textPrimary;
-  static const Color textSecondary = AppColors.textSecondary;
-  bool _fromHasError = false;
-  bool _toHasError = false;
-  String _fromErrorMessage = '';
-  String _toErrorMessage = '';
-  bool _isLoading = false;
-  final NationalRouteService _routeService = NationalRouteService();
-
-  double _parseCoord(dynamic value) {
-    if (value == null) return 0.0;
-    if (value is num) return value.toDouble();
-    if (value is String) return double.tryParse(value) ?? 0.0;
-    return 0.0;
-  }
-
-  @override
-  void dispose() {
-    _fromController.dispose();
-    _toController.dispose();
-    super.dispose();
-  }
-
-  void _clearErrors() {
-    setState(() {
-      _fromHasError = false;
-      _toHasError = false;
-      _fromErrorMessage = '';
-      _toErrorMessage = '';
-    });
-  }
-
-  Future<void> _searchRoute() async {
-    _clearErrors();
-    final from = _fromController.text.trim();
-    final to = _toController.text.trim();
-
-    // Validation: Check if fields are empty
-    if (from.isEmpty || to.isEmpty) {
-      setState(() {
-        if (from.isEmpty) {
-          _fromHasError = true;
-          _fromErrorMessage = 'Starting location is required';
-        }
-        if (to.isEmpty) {
-          _toHasError = true;
-          _toErrorMessage = 'Destination is required';
-        }
-      });
-      return;
-    }
-
-    if (from.toLowerCase() == to.toLowerCase()) {
-      setState(() {
-        _fromHasError = true;
-        _toHasError = true;
-        _fromErrorMessage = 'Cannot be the same';
-        _toErrorMessage = 'Cannot be the same';
-      });
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      // Search for routes using the Backend Service
-      final routesData = await _routeService.searchRoute(from, to);
-      
-      if (!mounted) return;
-
-      if (routesData.isNotEmpty) {
-        final routeJson = routesData.first;
-        final stages = (routeJson['stages'] as List<dynamic>?) ?? [];
-        
-        if (stages.isEmpty) {
-          setState(() {
-            _fromHasError = true;
-            _toHasError = true;
-            _fromErrorMessage = 'No path found';
-            _toErrorMessage = 'No path found';
-            _isLoading = false;
-          });
-          return;
-        }
-
-        // Map Backend JSON to BusRouteModel
-        final List<BusStop> busStops = stages.map((s) {
-          final coords = s['coordinates'] ?? {};
-          return BusStop(
-            name: s['name'] ?? 'Stop',
-            latitude: _parseCoord(coords['latitude'] ?? coords['lat']),
-            longitude: _parseCoord(coords['longitude'] ?? coords['lng'] ?? coords['lon']),
-          );
-        }).toList();
-
-        final BusRouteModel routeModel = BusRouteModel(
-          id: routeJson['_id']?.toString(),
-          routeName: routeJson['route_name'] ?? routeJson['name'] ?? 'Custom Route',
-          routeNumber: routeJson['route_number']?.toString(),
-          stops: busStops,
-        );
-
-        Navigator.pop(context);
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => RouteMapScreen(route: routeModel),
-          ),
-        );
-      } else {
-        // No routes found in backend
-        setState(() {
-          _fromHasError = true;
-          _toHasError = true;
-          _fromErrorMessage = 'Location not found';
-          _toErrorMessage = 'Location not found';
-          _isLoading = false;
-        });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No bus routes found for these locations in the database.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Search Error: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.55,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(30),
-          topRight: Radius.circular(30),
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Drag handle
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          
-          const Spacer(),
-          
-          // Title
-          const Text(
-            "Find a route",
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "Let's make a journey",
-            style: TextStyle(
-              fontSize: 16,
-              color: textSecondary,
-            ),
-          ),
-          
-          const SizedBox(height: 30),
-          
-          // From field with error state
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 30),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: _fromHasError ? Colors.red : Colors.grey.shade300,
-                      width: _fromHasError ? 2.5 : 2,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: TextField(
-                    controller: _fromController,
-                    onChanged: (value) {
-                      if (_fromHasError) {
-                        _clearErrors();
-                      }
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'From (e.g., Kaduwela, Malabe)',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 16,
-                      ),
-                      prefixIcon: Icon(
-                        Icons.location_on_outlined,
-                        color: _fromHasError ? Colors.red : primaryColor,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 16,
-                      ),
-                    ),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: textPrimary,
-                    ),
-                  ),
-                ),
-                if (_fromHasError && _fromErrorMessage.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 12, top: 4),
-                    child: Text(
-                      _fromErrorMessage,
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // To field with error state
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 30),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: _toHasError ? Colors.red : Colors.grey.shade300,
-                      width: _toHasError ? 2.5 : 2,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: TextField(
-                    controller: _toController,
-                    onChanged: (value) {
-                      if (_toHasError) {
-                        _clearErrors();
-                      }
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'To (e.g., Kollupitiya, Pettah)',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 16,
-                      ),
-                      prefixIcon: Icon(
-                        Icons.flag_outlined,
-                        color: _toHasError ? Colors.red : primaryColor,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 16,
-                      ),
-                    ),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: textPrimary,
-                    ),
-                  ),
-                ),
-                if (_toHasError && _toErrorMessage.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 12, top: 4),
-                    child: Text(
-                      _toErrorMessage,
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 30),
-          
-          // Search button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 30),
-            child: SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _searchRoute,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(27),
-                  ),
-                  elevation: 2,
-                ),
-                child: _isLoading 
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Text(
-                      'Search',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-              ),
-            ),
-          ),
-          
-          const Spacer(),
-        ],
-      ),
-    );
-  }
-}
+// RouteSearchModal removed and moved to lib/screens/modals/route_search_modal.dart

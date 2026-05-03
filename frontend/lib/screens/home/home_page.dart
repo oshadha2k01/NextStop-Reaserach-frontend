@@ -63,7 +63,10 @@ class _HomePageState extends State<HomePage> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Search Error: $e'),
+        backgroundColor: Colors.red,
+      ));
     } finally {
       setState(() {
         _isLoading = false;
@@ -105,6 +108,28 @@ class _HomePageState extends State<HomePage> {
       for (final stage in stages) {
         final latLng = _extractLatLng(stage);
         if (latLng == null) continue;
+    for (var stage in stages) {
+      double? lat;
+      double? lng;
+
+      final coords = stage['coordinates'];
+      if (coords is Map) {
+        lat = (coords['latitude'] ?? coords['lat'])?.toDouble();
+        lng = (coords['longitude'] ?? coords['lng'] ?? coords['lon'])?.toDouble();
+      } else {
+        lat = (stage['latitude'] ?? stage['lat'])?.toDouble();
+        lng = (stage['longitude'] ?? stage['lng'] ?? stage['lon'])?.toDouble();
+      }
+      
+      if (lat != null && lng != null) {
+        final latLng = LatLng(lat, lng);
+        points.add(latLng);
+        markers.add(Marker(
+          markerId: MarkerId(stage['name'] ?? 'stop_${points.length}'),
+          position: latLng,
+          infoWindow: InfoWindow(title: stage['name'] ?? 'Stop'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        ));
 
         points.add(latLng);
         markers.add(
