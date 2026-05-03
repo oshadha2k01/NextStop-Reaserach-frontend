@@ -305,6 +305,7 @@ class _RouteMapBottomSheetState extends State<RouteMapBottomSheet> {
 	Set<Marker> _markers = {};
 	GoogleMapController? _mapController;
 	bool _isLoading = true;
+	List<LatLng> _routePoints = [];
 
 	@override
 	void initState() {
@@ -385,11 +386,12 @@ class _RouteMapBottomSheetState extends State<RouteMapBottomSheet> {
 					),
 				};
 				_markers = markers;
+				_routePoints = points;
 				_isLoading = false;
 			});
 
-			if (points.isNotEmpty && _mapController != null) {
-				_fitMapToPoints(points);
+			if (_routePoints.isNotEmpty && _mapController != null) {
+				_fitMapToPoints(_routePoints);
 			}
 		} catch (e) {
 			if (!mounted) return;
@@ -468,8 +470,8 @@ class _RouteMapBottomSheetState extends State<RouteMapBottomSheet> {
 											myLocationEnabled: true,
 											onMapCreated: (controller) {
 												_mapController = controller;
-												if (_polylines.isNotEmpty && _polylines.first.points.isNotEmpty) {
-													_fitMapToPoints(_polylines.first.points);
+														if (_routePoints.isNotEmpty) {
+															_fitMapToPoints(_routePoints);
 												}
 											},
 										),

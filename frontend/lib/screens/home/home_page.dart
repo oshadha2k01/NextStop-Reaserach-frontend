@@ -22,6 +22,13 @@ class _HomePageState extends State<HomePage> {
   bool _isLoadingResult = false;
   Map<String, dynamic>? _activeRoute;
 
+  double? _parseCoord(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
   void _searchRoute() async {
     if (_fromController.text.isEmpty || _toController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -65,27 +72,54 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  LatLng? _extractLatLng(dynamic stage) {
+    if (stage is! Map) return null;
+
+    double? lat;
+    double? lng;
+
+    final coords = stage['coordinates'];
+    if (coords is Map) {
+      lat = _parseCoord(coords['latitude'] ?? coords['lat']);
+      lng = _parseCoord(coords['longitude'] ?? coords['lng'] ?? coords['lon']);
+    } else if (coords is List && coords.length >= 2) {
+      lng = _parseCoord(coords[0]);
+      lat = _parseCoord(coords[1]);
+    } else {
+      lat = _parseCoord(stage['latitude'] ?? stage['lat']);
+      lng = _parseCoord(stage['longitude'] ?? stage['lng'] ?? stage['lon']);
+    }
+
+    if (lat == null || lng == null) return null;
+    return LatLng(lat, lng);
+  }
+
   void _plotRouteOnMap(Map<String, dynamic> route) {
-    List<LatLng> points = [];
-    Set<Marker> markers = {};
-    final stages = route['stages'] as List<dynamic>;
+    final List<LatLng> points = [];
+    final Set<Marker> markers = {};
+    final stages = route['stages'];
 
     double minLat = 90.0, maxLat = -90.0, minLng = 180.0, maxLng = -180.0;
 
-    for (var stage in stages) {
-      if (stage['coordinates'] != null) {
-        double lat = stage['coordinates']['latitude'];
-        double lng = stage['coordinates']['longitude'];
-        final latLng = LatLng(lat, lng);
-        
-        points.add(latLng);
-        markers.add(Marker(
-          markerId: MarkerId(stage['name']),
-          position: latLng,
-          infoWindow: InfoWindow(title: stage['name']),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-        ));
+    if (stages is List) {
+      for (final stage in stages) {
+        final latLng = _extractLatLng(stage);
+        if (latLng == null) continue;
 
+        points.add(latLng);
+        markers.add(
+          Marker(
+            markerId: MarkerId(stage is Map && stage['name'] != null ? stage['name'].toString() : 'stop_${points.length}'),
+            position: latLng,
+            infoWindow: InfoWindow(
+              title: stage is Map && stage['name'] != null ? stage['name'].toString() : 'Stop',
+            ),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          ),
+        );
+
+        final lat = latLng.latitude;
+        final lng = latLng.longitude;
         if (lat < minLat) minLat = lat;
         if (lat > maxLat) maxLat = lat;
         if (lng < minLng) minLng = lng;
@@ -104,10 +138,15 @@ class _HomePageState extends State<HomePage> {
     });
 
     if (points.isNotEmpty && _mapController != null) {
-      _mapController!.animateCamera(CameraUpdate.newLatLngBounds(
-        LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)),
-        60,
-      ));
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(minLat, minLng),
+            northeast: LatLng(maxLat, maxLng),
+          ),
+          60,
+        ),
+      );
     }
   }
 
