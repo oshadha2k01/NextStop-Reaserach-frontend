@@ -54,6 +54,7 @@ class _HomePageState extends State<HomePage> {
   LatLng? liveBusLocation;
   Map<String, dynamic>? busData;
   bool _isBusActive = false;
+  StreamSubscription<LatLng>? _locationSubscription;
 
   bool _parseBusActive(dynamic statusValue) {
     if (statusValue == null) return false;
@@ -198,6 +199,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     socket?.disconnect();
+    _locationSubscription?.cancel();
     _searchController.dispose();
     _mapControllerBase?.dispose();
     super.dispose();
@@ -225,6 +227,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _loadUserName() async {
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString('user_name');
+    if (!mounted) return;
     if (name != null && name.isNotEmpty) {
       setState(() {
         _userName = name.split(' ')[0]; // Get first name only
@@ -263,20 +266,21 @@ class _HomePageState extends State<HomePage> {
         );
 
         // Start listening to location updates
-        LocationService.getLocationStream().listen((newLocation) {
-          if (mounted) {
-            setState(() {
-              _currentPosition = newLocation;
-              _updateLocationMarker(newLocation);
-            });
-          }
+        _locationSubscription = LocationService.getLocationStream().listen((newLocation) {
+          if (!mounted) return;
+          setState(() {
+            _currentPosition = newLocation;
+            _updateLocationMarker(newLocation);
+          });
         });
       } else {
+        if (!mounted) return;
         setState(() => _isLoadingLocation = false);
         _showLocationServiceDialog();
       }
     } catch (e) {
       debugPrint('Location error: $e');
+      if (!mounted) return;
       setState(() => _isLoadingLocation = false);
     }
   }

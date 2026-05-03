@@ -218,7 +218,7 @@ class ApiService {
   }
 
   // People Count specific API
-  static const String peopleCountUrl = 'https://smartbusstop.me/backend/api/dl/peopleConut';
+  static const String peopleCountUrl = '${ApiConfig.baseUrl}/dl/peopleConut';
   
   /// Fetch the latest people count data from the backend
   static Future<PeopleCountModel?> fetchPeopleCount() async {
